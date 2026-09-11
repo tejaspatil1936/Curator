@@ -46,6 +46,9 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Step 5b: Planted false alert demo flag (system_design.md §10.3)
+    plant_false_alert: bool = True
+
 
 settings = Settings()
 

@@ -36,7 +36,10 @@ export default function Narrative({
       {narrative.map((item) => {
         const isSelected = selectedSeq === item.seq
         const hasEvidence = item.evidence_event_ids && item.evidence_event_ids.length > 0
-        const isUnsupported = !hasEvidence
+        const isSupported = item.verification
+          ? item.verification.supported
+          : (item.supported !== undefined ? item.supported : hasEvidence)
+        const isUnsupported = isSupported === false
 
         return (
           <div key={item.seq} className="group">
@@ -47,8 +50,10 @@ export default function Narrative({
               className={`w-full text-left font-sans text-body transition-colors duration-120 block px-2.5 py-1.5 rounded-sm focus-visible:outline-none ${
                 isSelected
                   ? 'bg-evidence text-ink'
+                  : isUnsupported
+                  ? 'text-ink-faint line-through hover:bg-paper-sunk'
                   : 'text-ink hover:bg-paper-sunk hover:underline hover:decoration-dotted hover:decoration-ink-faint'
-              } ${isUnsupported ? 'line-through text-ink-faint' : ''}`}
+              }`}
               style={{
                 borderLeft: isSelected ? '2px solid var(--evidence-edge)' : '2px solid transparent',
               }}
@@ -56,9 +61,12 @@ export default function Narrative({
               {item.text}
             </button>
 
-            {/* Unsupported warning label if 0 evidence IDs */}
+            {/* Unsupported warning label (DESIGN.md §5.2) */}
             {isUnsupported && (
-              <div className="pl-5 pt-1 text-small text-unsupported font-medium select-none">
+              <div
+                className="pl-5 pt-1 text-small text-unsupported font-medium select-none"
+                title={item.verification?.reason || item.verification_reason || 'No supporting evidence'}
+              >
                 ⚠ No supporting evidence
               </div>
             )}

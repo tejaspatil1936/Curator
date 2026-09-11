@@ -497,6 +497,33 @@ def _handle_dry_run(
 
         content_str = json.dumps({"mappings": mappings})
 
+    elif task_name == "narrative_verification":
+        # Extract sentence seq numbers from user_blocks
+        import re
+        prompt_text = (user_blocks[0].get("text", "") if user_blocks else "")
+        seqs = [int(m) for m in re.findall(r"Sentence seq (\d+):", prompt_text)]
+        results = []
+        for s in seqs:
+            # Mark planted false alert claim or zero evidence as unsupported in mock
+            is_unsupported = "lsass" in prompt_text.lower() and "42145" in prompt_text
+            if is_unsupported:
+                results.append({
+                    "seq": s,
+                    "supported": False,
+                    "reason": "Cited event 42145 is a conhost.exe execution and does not show LSASS memory access or credential dumping.",
+                })
+            else:
+                results.append({
+                    "seq": s,
+                    "supported": True,
+                    "reason": "Cited evidence events substantiate the forensic claim in this sentence.",
+                })
+        content_str = json.dumps({"results": results})
+        in_tok = 800
+        out_tok = 150
+        cache_read = 0
+        cache_write = 0
+
     latency_ms = int((time.time() - start_time) * 1000) + 45
     cost = _compute_cost(model, in_tok, out_tok, cache_read, cache_write)
 

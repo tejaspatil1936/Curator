@@ -191,6 +191,39 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
         )
 
     all_alerts: list[dict[str, Any]] = other_alerts + aggregated_cur013
+
+    # Step 5b: Planted false alert demo fixture
+    if settings.plant_false_alert:
+        from datetime import datetime
+        from curator.pipeline.fixtures import (
+            PLANTED_ALERT_EVENT_ID,
+            PLANTED_HOST,
+            PLANTED_RULE_ID,
+            PLANTED_RULE_NAME,
+            PLANTED_SEVERITY,
+            PLANTED_TECHNIQUE_IDS,
+            PLANTED_TS,
+            PLANTED_USER,
+        )
+        all_alerts.append(
+            {
+                "event_id": PLANTED_ALERT_EVENT_ID,
+                "rule_id": PLANTED_RULE_ID,
+                "rule_name": PLANTED_RULE_NAME,
+                "severity": PLANTED_SEVERITY,
+                "technique_ids": PLANTED_TECHNIQUE_IDS,
+                "ts": datetime.fromisoformat(PLANTED_TS),
+                "host": PLANTED_HOST,
+                "user_norm": PLANTED_USER,
+                "process_uid": f"proc_{PLANTED_ALERT_EVENT_ID}",
+                "command_line": r"\??\C:\windows\system32\conhost.exe 0xffffffff -ForceV1",
+                "is_planted": True,
+                "detail": {"planted": True, "note": "Step 5b demo false alert"},
+                "dst_ip": "",
+                "dst_port": None,
+            }
+        )
+
     all_alerts.sort(key=lambda x: (x["ts"], x["rule_id"]))
 
     rule_counts: Counter[str] = Counter(a["rule_id"] for a in all_alerts)

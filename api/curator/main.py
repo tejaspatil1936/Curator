@@ -195,16 +195,31 @@ def get_incident(
         for r in session.execute(q_edge, {"id": incident_id})
     ]
 
-    # Narrative sentences (Step 4c & 4d)
+    # Narrative sentences & verifications (Step 4c, 4d, 5a, 5c)
     q_narr = text("""
-        SELECT id, seq, text, evidence_event_ids, technique_id, technique_name,
-               technique_conf, generated_by
-        FROM narrative_sentences
-        WHERE incident_id = :id
-        ORDER BY seq ASC
+        SELECT n.id, n.seq, n.text, n.evidence_event_ids, n.technique_id, n.technique_name,
+               n.technique_conf, n.generated_by,
+               v.supported, v.reason AS verification_reason, v.model AS verifier_model
+        FROM narrative_sentences n
+        LEFT JOIN LATERAL (
+            SELECT supported, reason, model
+            FROM verifications
+            WHERE sentence_id = n.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) v ON true
+        WHERE n.incident_id = :id
+        ORDER BY n.seq ASC
     """)
-    narrative = [
-        {
+    narr_rows = session.execute(q_narr, {"id": incident_id}).fetchall()
+
+    narrative = []
+    verifications = []
+    for r in narr_rows:
+        has_ev = bool(r.evidence_event_ids and len(r.evidence_event_ids) > 0)
+        is_supp = r.supported if r.supported is not None else (True if has_ev else False)
+
+        narrative.append({
             "id": r.id,
             "seq": r.seq,
             "text": r.text,
@@ -213,20 +228,52 @@ def get_incident(
             "technique_name": r.technique_name,
             "technique_conf": float(r.technique_conf) if r.technique_conf is not None else None,
             "generated_by": r.generated_by,
-        }
-        for r in session.execute(q_narr, {"id": incident_id})
-    ]
+            "supported": is_supp,
+            "verification_reason": r.verification_reason,
+            "verification": {
+                "supported": is_supp,
+                "reason": r.verification_reason or ("No cited evidence events." if not has_ev else None),
+                "model": r.verifier_model,
+            } if r.supported is not None or not has_ev else None,
+        })
+        if r.supported is not None:
+            verifications.append({
+                "sentence_id": r.id,
+                "seq": r.seq,
+                "supported": r.supported,
+                "reason": r.verification_reason,
+                "model": r.verifier_model,
+            })
 
     return {
         "incident": incident,
         "timeline": timeline,
         "narrative": narrative,
-        "verifications": [],
+        "verifications": verifications,
         "techniques": [],
         "entities": entities,
         "edges": edges,
         "recommendations": [],
     }
+
+
+@app.post("/incidents/{incident_id}/verify")
+def verify_incident_endpoint(
+    incident_id: int,
+    session: Session = Depends(db.get_session),
+) -> dict:
+    """Run forensic claim verification for an incident's narrative (Step 5a)."""
+    from curator.ai.verify import verify_incident
+    return verify_incident(incident_id, session=session)
+
+
+@app.post("/verify/all")
+def verify_all_endpoint(
+    session: Session = Depends(db.get_session),
+) -> dict:
+    """Run forensic claim verification across all incidents (Step 5a)."""
+    from curator.ai.verify import verify_all_incidents
+    return verify_all_incidents(session=session)
 
 
 @app.get("/evidence")

@@ -68,6 +68,8 @@ export default function EvidencePanel({
             <p className="text-small text-ink-muted">
               {isLoading
                 ? 'Loading telemetry records…'
+                : sentence?.supported === false || sentence?.verification?.supported === false
+                ? `${evidenceEvents.length} event${evidenceEvents.length === 1 ? '' : 's'} cited · Claim unsupported`
                 : `${evidenceEvents.length} event${evidenceEvents.length === 1 ? '' : 's'} support this sentence`}
             </p>
           </div>
@@ -82,6 +84,15 @@ export default function EvidencePanel({
 
         {/* Evidence List */}
         <div className="flex-1 overflow-y-auto divide-y divide-rule p-5 space-y-6">
+          {(sentence?.supported === false || sentence?.verification?.supported === false) && (
+            <div className="p-3 bg-unsupported/10 border border-unsupported/30 rounded text-small text-unsupported">
+              <span className="font-semibold block mb-0.5">⚠ Claim unsupported by cited evidence</span>
+              <span className="text-ink-secondary text-small block">
+                {sentence?.verification?.reason || sentence?.verification_reason || 'The cited events do not substantiate the claim.'}
+              </span>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="py-8 text-center text-small text-ink-muted">
               Retrieving byte-identical telemetry…
