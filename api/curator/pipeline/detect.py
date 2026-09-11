@@ -91,7 +91,13 @@ _STAGING_PATH_RE = re.compile(
     r"|\\users\\[^\\]+\\documents\\|\\windows\\temp\\)",
     re.IGNORECASE,
 )
-_STAGING_EXTENSIONS = (".zip", ".rar", ".7z", ".gz", ".tar", ".cab", ".dat", ".db")
+# Only true archive/database formats — .dat and .db removed as too generic
+_STAGING_EXTENSIONS = (".zip", ".rar", ".7z", ".gz", ".tar", ".cab")
+# Windows system ProgramData paths that produce noise — never attacker staging
+_SYSTEM_PROGRAMDATA_RE = re.compile(
+    r"c:\\programdata\\microsoft\\windows\\",
+    re.IGNORECASE,
+)
 
 # 6.1a: Benign Windows scheduled tasks to ignore in CUR-008
 _BENIGN_TASK_SUBSTRINGS = (
@@ -610,6 +616,7 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
         if (
             _STAGING_PATH_RE.search(file_path)
             and file_path.lower().endswith(_STAGING_EXTENSIONS)
+            and not _SYSTEM_PROGRAMDATA_RE.search(file_path)  # exclude Windows system paths
         ):
             add_alert(
                 "CUR-022",

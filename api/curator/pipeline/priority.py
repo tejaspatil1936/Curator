@@ -37,6 +37,8 @@ _RULE_TACTICS: dict[str, str] = {
     "CUR-018": "Credential Access",
     "CUR-019": "Defense Evasion",
     "CUR-020": "Execution",
+    "CUR-021": "Lateral Movement",   # WinRM remote execution (T1021.006)
+    "CUR-022": "Collection",          # Data staging (T1074)
 }
 
 
@@ -80,16 +82,16 @@ def calculate_priority(
         )
 
     # 3. Lateral movement (+20)
+    # CUR-012: SMB/NTLM lateral  CUR-017: RDP  CUR-021: WinRM
     has_lat_move = bool(
-        (len(clean_hosts) > 1 and rule_ids & {"CUR-012", "CUR-017"})
-        or rule_ids & {"CUR-017"}
+        rule_ids & {"CUR-012", "CUR-017", "CUR-021"}
     )
     if has_lat_move:
         score += 20
         factors.append(
             {
                 "points": 20,
-                "reason": "lateral-movement pattern (network share / remote interactive logon across endpoints)",
+                "reason": "lateral-movement pattern (network share / remote interactive logon / WinRM across endpoints)",
             }
         )
 
