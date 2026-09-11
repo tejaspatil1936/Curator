@@ -79,7 +79,9 @@ For each sentence, you are provided a strict whitelist of retrieved candidate AT
 STRICT RULES:
 1. You may ONLY choose a technique_id that appears in the candidate list for that sentence.
 2. Select the best matching technique from the candidate list that accurately reflects the technical action and telemetry.
-3. PROTOCOL DISTINCTIONS:
+3. PROTOCOL & TECHNIQUE DISTINCTIONS:
+   - Deletion or secure-wiping of payloads, droppers, or artifacts to destroy forensic evidence (e.g. sdelete, del, Remove-Item) represents File Deletion (T1070.004) under Defense Evasion, NOT Data Destruction (T1485, which is Impact).
+   - Filenames using unicode override characters (U+202E / â€®) represent Right-to-Left Override (T1036.002).
    - Network connections on port 5985/5986 represent WinRM (T1021.006 Windows Remote Management), NOT SMB.
    - Network connections on port 445 or share accesses (\\\\*\\IPC$, \\\\*\\C$, \\\\*\\ADMIN$) represent SMB (T1021.002 SMB/Windows Admin Shares).
    - Base64, hidden window (-w hidden), or encoded command (-e / -enc) executions represent Command Obfuscation (T1027.010) or PowerShell (T1059.001).
@@ -100,27 +102,22 @@ STRICT RULES:
 def map_incident_techniques(
     incident_id: int,
     session: Session,
-    k_candidates: int = 20,
+    k_candidates: int = 30,
 ) -> dict[str, Any]:
     """Ground and map narrative sentences to ATT&CK techniques."""
     logger.info("Mapping ATT&CK techniques for incident #%d (k=%d)", incident_id, k_candidates)
 
     # 1. Fetch narrative sentences for this incident
     q_sentences = text("""
-        SELECT id, seq, text, evidence_event_ids
+        SELECT seq, text, evidence_event_ids
         FROM narrative_sentences
-        WHERE incident_id = :inc_id
+        WHERE incident_id = :id
         ORDER BY seq ASC
     """)
-    sentences = session.execute(q_sentences, {"inc_id": incident_id}).fetchall()
+    sentences = session.execute(q_sentences, {"id": incident_id}).fetchall()
     if not sentences:
-        logger.warning("No narrative sentences found for incident #%d to map", incident_id)
-        return {
-            "mapped_count": 0,
-            "declined_count": 0,
-            "rejected_out_of_candidates_count": 0,
-            "mappings": [],
-        }
+        logger.warning("No narrative sentences found for incident #%d", incident_id)
+        return {"incident_id": incident_id, "mapped_count": 0, "declined_count": 0}
 
     # 2. Retrieve candidates per sentence using hybrid search enriched with cited event context
     candidates_by_seq: dict[int, list[Candidate]] = {}
@@ -176,11 +173,23 @@ def map_incident_techniques(
                     context_terms.append(_EVENT_CODE_TRANSLATIONS[e_code])
 
         cleaned_txt = _clean_query_text(txt)
+
+        # Domain-specific keyword enrichment for evasions and techniques
+        combined_lower = f"{txt} {' '.join(context_terms)}".lower()
+        extra_terms: list[str] = []
+        if "\u202e" in txt or "â€®" in txt or "â€®" in combined_lower or "right-to-left" in combined_lower or "rtlo" in combined_lower:
+            extra_terms.append("right-to-left override RTLO unicode filename reversal masquerading")
+
+        deletion_keywords = ("sdelete", "del ", "erase", "remove-item", "wevtutil", "cipher /w", "secure-delet", "destroy evidence", "evidence destruction")
+        if any(kw in combined_lower for kw in deletion_keywords):
+            extra_terms.append("indicator removal file deletion anti-forensics evidence destruction secure delete")
+            context_terms = [t for t in context_terms if "process creation" not in t]
+
         # Deduplicate terms while preserving order
         unique_context = list(dict.fromkeys(context_terms))
-        enriched_query = f"{cleaned_txt} {' '.join(unique_context[:20])}".strip()
+        enriched_query = f"{cleaned_txt} {' '.join(extra_terms)} {' '.join(unique_context[:20])}".strip()
 
-        # Hybrid retrieval over pgvector embeddings & keyword search (k=20)
+        # Hybrid retrieval over pgvector embeddings & keyword search (k=30)
         cands = retrieve(enriched_query, k=k_candidates, conn=session.connection())
         candidates_by_seq[seq] = cands
         valid_tech_ids_by_seq[seq] = {c.id for c in cands}
