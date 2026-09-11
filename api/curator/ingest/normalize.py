@@ -1,4 +1,4 @@
-"""Entity normalization for users, hosts, processes, paths, and IP addresses.
+r"""Entity normalization for users, hosts, processes, paths, and IP addresses.
 
 Enforces the dataset realities documented in datasets/SCHEMA_NOTES.md:
 - Host is always the endpoint Hostname (e.g. UTICA), never the collector host.
@@ -76,11 +76,11 @@ def normalize_path(path: str | None) -> str | None:
     return cleaned
 
 
-def normalize_ip(ip_str: str | None) -> str | None:
+def normalize_ip(ip_str: Any) -> str | None:
     """Normalize and validate an IP address. Returns None if invalid or ignorable."""
     if not ip_str or ip_str == "-":
         return None
-    raw = ip_str.split("%", 1)[0].strip()
+    raw = str(ip_str).split("%", 1)[0].strip()
     if raw in _IGNORABLE_IPS:
         return None
     try:

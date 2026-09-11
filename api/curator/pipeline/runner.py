@@ -92,18 +92,17 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
     q_events = text("""
         SELECT id, ts, source, host, user_name, process_name, process_id,
                parent_process, src_ip, dst_ip, file_path, command_line,
-               event_code, ocsf, raw, is_planted
+               event_code, ocsf, is_planted
         FROM events
         WHERE event_code = ANY(:codes)
         ORDER BY ts ASC, id ASC
-    """)
-    res = session.execute(q_events, {"codes": CANDIDATE_EVENT_CODES})
-    events = [dict(r._mapping) for r in res]
+    """).execution_options(yield_per=10000)
 
     all_alerts: list[dict[str, Any]] = []
     rule_counts: Counter[str] = Counter()
 
-    for ev in events:
+    for r in session.execute(q_events, {"codes": CANDIDATE_EVENT_CODES}):
+        ev = dict(r._mapping)
         cand_alerts = evaluate_event(ev)
         for c in cand_alerts:
             rule_counts[c.rule_id] += 1
@@ -219,10 +218,20 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
     # Stage 4: Correlation
     # --------------------------------------------------------------------------
     logger.info("Stage 4: Running Union-Find correlation across alerts")
-    ev_by_id = {e["id"]: e for e in events}
+    alert_event_ids = list({a["event_id"] for a in all_alerts})
+    ev_lookup = {}
+    if alert_event_ids:
+        q_ev_look = text("""
+            SELECT id, file_path, src_ip, dst_ip
+            FROM events
+            WHERE id = ANY(:ids)
+        """)
+        for er in session.execute(q_ev_look, {"ids": alert_event_ids}):
+            ev_lookup[er.id] = er
+
     alert_items = []
     for a in all_alerts:
-        ev = ev_by_id.get(a["event_id"], {})
+        ev = ev_lookup.get(a["event_id"])
         alert_items.append(
             AlertItem(
                 id=a["id"],
@@ -232,9 +241,9 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 host=a["host"],
                 user_norm=a["user_norm"],
                 process_uid=a["process_uid"],
-                file_path=ev.get("file_path"),
-                src_ip=str(ev["src_ip"]) if ev.get("src_ip") else None,
-                dst_ip=str(ev["dst_ip"]) if ev.get("dst_ip") else None,
+                file_path=ev.file_path if ev else None,
+                src_ip=str(ev.src_ip) if ev and ev.src_ip else None,
+                dst_ip=str(ev.dst_ip) if ev and ev.dst_ip else None,
                 is_duplicate=a.get("is_duplicate", False),
                 canonical_id=a.get("canonical_id"),
                 command_line=a.get("command_line"),
@@ -411,3 +420,12 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
         ),
     }
     return summary
+
+
+if __name__ == "__main__":
+    import json
+    from curator.config import configure_logging
+
+    configure_logging()
+    result = run_pipeline()
+    print(json.dumps(result, indent=2, default=str))

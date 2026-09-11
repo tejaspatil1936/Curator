@@ -66,6 +66,8 @@ def test_normalize_path():
 
 
 def test_normalize_and_filter_ip():
+    import ipaddress
+    assert normalize_ip(ipaddress.IPv4Address("192.168.1.50")) == "192.168.1.50"
     assert normalize_ip("192.168.1.50") == "192.168.1.50"
     assert normalize_ip("10.0.1.4") == "10.0.1.4"
     assert normalize_ip("::ffff:10.0.1.4") == "10.0.1.4"

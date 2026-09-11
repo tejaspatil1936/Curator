@@ -58,9 +58,17 @@ def test_deduplicate_alerts_minhash():
     t0 = datetime(2020, 5, 2, 3, 0, 0, tzinfo=UTC)
     t1 = datetime(2020, 5, 2, 3, 2, 0, tzinfo=UTC)  # 2 minutes later
 
-    # Almost identical command line with minor parameter change
-    cmd1 = "powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\\script.ps1 -Target 10.0.1.5 -Port 8080 -Verbose"
-    cmd2 = "powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\\script.ps1 -Target 10.0.1.6 -Port 8080 -Verbose"
+    # Long, realistic command line with 26 tokens differing by a single IP target (>0.9 Jaccard)
+    cmd1 = (
+        "powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -WindowStyle Hidden "
+        "-Command Get-WmiObject -Class Win32_Process -Namespace root/cimv2 -ComputerName 10.0.1.5 "
+        "-Credential domain/admin -Filter status=ok -Verbose -Debug -ErrorAction SilentlyContinue"
+    )
+    cmd2 = (
+        "powershell.exe -ExecutionPolicy Bypass -NoProfile -NonInteractive -WindowStyle Hidden "
+        "-Command Get-WmiObject -Class Win32_Process -Namespace root/cimv2 -ComputerName 10.0.1.6 "
+        "-Credential domain/admin -Filter status=ok -Verbose -Debug -ErrorAction SilentlyContinue"
+    )
 
     a1 = AlertRecord(
         id=10,
