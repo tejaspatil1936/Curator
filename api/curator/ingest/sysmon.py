@@ -514,7 +514,6 @@ def parse(
         "severity": r.text("Severity"),
         "status_id": status[0] if status else None,
         "status": status[1] if status else None,
-        "message": r.text("Message"),
         "metadata": _prune(
             {
                 "version": OCSF_VERSION,

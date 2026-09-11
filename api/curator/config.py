@@ -74,3 +74,23 @@ CHALLENGE_MODEL = MODEL_OPUS if settings.opus_diagnostic else MODEL_SONNET
 # Baked into the image at build time (api/Dockerfile names the same model).
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 EMBEDDING_DIM = 384
+
+# --- Pipeline constants (§6.1 & Step 3) --------------------------------------
+
+# Dedup windows
+DEDUP_EXACT_WINDOW_SECONDS = 60
+DEDUP_MINHASH_WINDOW_SECONDS = 300  # 5 min near-duplicate window
+DEDUP_MINHASH_THRESHOLD = 0.9
+
+# Correlation windows (named constants, tuned against dataset)
+CORRELATE_HOST_WINDOW_SECONDS = 1800     # 30 min on same host
+CORRELATE_USER_WINDOW_SECONDS = 1800     # 30 min on same user
+CORRELATE_PROCESS_WINDOW_SECONDS = 900   # 15 min on process lineage
+CORRELATE_IP_WINDOW_SECONDS = 1800       # 30 min on shared IP
+CORRELATE_FILE_WINDOW_SECONDS = 3600     # 60 min on shared file path/hash
+
+# Bounded evidence context per incident
+EVIDENCE_SURROUNDING_SECONDS = 60        # ±60s surrounding alerting processes
+EVIDENCE_MAX_EVENTS = 250                # low hundreds cap for Step 4 model context
+PIPELINE_SCHEDULE_SECONDS = 10
+

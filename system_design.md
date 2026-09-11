@@ -427,32 +427,36 @@ over the same data.
 **1. Parse** (`ingest/`) — source-specific → OCSF. Unknown fields go to `ocsf.unmapped`
 rather than being discarded. Original always preserved in `raw`.
 
-**2. Dedup** (`pipeline/dedup.py`)
-- `dedup_key = sha256(host | user | process_name | command_line | event_code | floor(ts, 60s))`
+**2. Detect** (`pipeline/detect.py`) — deterministic Python predicates over the OCSF
+shape and event fields. Emits candidate security alerts into the `alerts` table.
+Derives 15–25 rules from confirmed event types in `SCHEMA_NOTES.md`.
+
+**3. Dedup** (`pipeline/dedup.py`) — deduplication over alerts:
+- `dedup_key = sha256(rule_id | host | user_norm | process_uid | floor(ts, 60s))`
 - Exact key match → mark `is_duplicate`, point `canonical_id` at the first occurrence.
 - Near-match: MinHash/Jaccard over the token set of `command_line` + `process_name`;
   threshold 0.9 within a 5-minute window.
 - **Duplicates are never deleted.** They are marked. `raw_alert_count` on the incident
   counts them — that number is the "500" in "500 alerts → 6 incidents."
 
-**3. Correlate** (`pipeline/correlate.py`) — union-find over shared attributes.
-Two non-duplicate events join the same incident if they share any of:
+**4. Correlate** (`pipeline/correlate.py`) — union-find over unique alerts using normalized entities:
+Two non-duplicate alerts join the same incident if they share any of:
 - same `host` within 30 min
-- same `user_name` within 30 min
-- process lineage (`parent_process` → `process_name`) within 5 min
-- a shared IP (`src_ip`/`dst_ip` in either direction) within 30 min
+- same normalized `user_norm` within 30 min (machine accounts excluded)
+- process lineage via process GUIDs (`process_uid`) within 15 min
+- a shared IP (`src_ip`/`dst_ip` in either direction, non-loopback) within 30 min
 - a shared `file_path` or hash
 
 Windows are config constants, not magic numbers in the code. Tune them against the
 dataset; document what you tuned.
 
-**4. Timeline** (`pipeline/timeline.py`) — `ORDER BY ts`. That is the entire algorithm.
+**5. Timeline** (`pipeline/timeline.py`) — `ORDER BY ts`. That is the entire algorithm.
 Ties broken by `event_code`, then `id`. **No model involvement, ever.**
 
-**5. Entities** (`pipeline/entities.py`) — extract hosts/users/IPs/processes/files, build
+**6. Entities** (`pipeline/entities.py`) — extract hosts/users/IPs/processes/files, build
 edges from co-occurrence within an event.
 
-**6. Priority** (`pipeline/priority.py`) — transparent additive score, 0–100. Every
+**7. Priority** (`pipeline/priority.py`) — transparent additive score, 0–100. Every
 contributing factor is written to `priority_reason` so the UI can explain the ranking:
 ```
 +30  credential-access indicators present
@@ -699,7 +703,7 @@ Each step is requested as a separate prompt. **Do not build ahead.**
 | --- | --- | --- |
 | 1 | Skeleton: compose, 3 containers, schema, `/health` | `make up` → `/health` green, web shows "connected" |
 | 2 | Ingest: dataset download, parsers, OCSF, `/seed` | events queryable in psql, counts sane |
-| 3 | Deterministic pipeline: dedup, correlate, timeline, entities, priority | `/incidents` returns a ranked list; "500 → N" visible |
+| 3 | Detection & deterministic pipeline: detect, dedup, correlate, timeline, entities, priority | `/incidents` returns a ranked list; alert→incident reduction visible |
 | 4 | Narrative + ATT&CK mapping + **click-to-evidence** | click a sentence → raw log appears |
 | 5 | Verifier + **strike-out** + planted alert | planted alert produces a struck-through sentence |
 | 6 | Accuracy harness + **Challenge** | `make eval` prints numbers; Challenge button works |

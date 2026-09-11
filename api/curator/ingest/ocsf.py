@@ -183,7 +183,6 @@ class OcsfEvent(_Obj):
     severity: str | None = None
     status_id: int | None = None
     status: str | None = None
-    message: str | None = None
     metadata: Metadata
     device: Device
     actor: Actor | None = None

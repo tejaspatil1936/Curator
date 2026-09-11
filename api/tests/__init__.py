@@ -1,0 +1,1 @@
+"""Curator test suite."""

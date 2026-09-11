@@ -76,6 +76,34 @@ ALTER TABLE events
     ADD CONSTRAINT events_incident_id_fkey
     FOREIGN KEY (incident_id) REFERENCES incidents(id);
 
+-- §5.1b alerts (Step 3 detection stage) --------------------------------------
+
+CREATE TABLE alerts (
+    id            BIGSERIAL PRIMARY KEY,
+    event_id      BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    rule_id       TEXT NOT NULL,
+    rule_name     TEXT NOT NULL,
+    severity      TEXT NOT NULL,           -- low|medium|high|critical
+    technique_ids TEXT[],                  -- rule author's hint. NEVER used for scoring.
+    ts            TIMESTAMPTZ NOT NULL,
+    host          TEXT,                    -- normalized endpoint (Hostname, not collector)
+    user_norm     TEXT,
+    process_uid   TEXT,
+    dedup_key     TEXT,
+    is_duplicate  BOOLEAN NOT NULL DEFAULT false,
+    canonical_id  BIGINT REFERENCES alerts(id),
+    incident_id   BIGINT REFERENCES incidents(id) ON DELETE SET NULL,
+    is_planted    BOOLEAN NOT NULL DEFAULT false
+);
+
+COMMENT ON COLUMN alerts.technique_ids IS 'alerts.technique_ids must never reach the accuracy harness. Scoring against labels a rule author wrote would make the evaluation circular.';
+
+CREATE INDEX idx_alerts_ts        ON alerts (ts);
+CREATE INDEX idx_alerts_host      ON alerts (host);
+CREATE INDEX idx_alerts_incident  ON alerts (incident_id);
+CREATE INDEX idx_alerts_dedup     ON alerts (dedup_key);
+CREATE INDEX idx_alerts_event     ON alerts (event_id);
+
 -- §5.3 entities and entity_edges ---------------------------------------------
 
 CREATE TABLE entities (
