@@ -234,81 +234,180 @@ def _handle_dry_run(
         is_day2 = any("dschrute" in u for u in inc_users) or incident_id in (455, 315, 184)
 
         if is_day1:  # Day 1 Campaign (pbeesly)
-            # Pick confirmed real event IDs present in Day 1 evidence
-            ev_init = 381 if 381 in alert_ids else (alert_ids[0] if alert_ids else 381)
-            ev_c2 = 426 if 426 in alert_ids else (alert_ids[1] if len(alert_ids) > 1 else ev_init)
-            ev_stage = 88468 if 88468 in alert_ids else (alert_ids[min(5, len(alert_ids)-1)] if alert_ids else ev_init)
-            ev_share = 93858 if 93858 in alert_ids else (alert_ids[min(10, len(alert_ids)-1)] if alert_ids else ev_init)
-
+            # High-fidelity multi-sentence narrative covering initial execution, module loading,
+            # C2 beaconing, SMB share discovery/movement, service installation, and PowerShell exfil.
+            # Intentionally includes 2 non-whitelisted IDs (999991, 999992) to verify validator drop tracking.
+            sentences = [
+                {
+                    "seq": 1,
+                    "text": "The masqueraded Right-to-Left Override executable cod.3aka3.scr was executed under user pbeesly from C:\\ProgramData\\victim\\ on SCRANTON.",
+                    "evidence_event_ids": [426, 373],
+                },
+                {
+                    "seq": 2,
+                    "text": "Support modules and DLLs were dynamically loaded into the masqueraded screensaver process from non-standard directory C:\\ProgramData\\victim\\.",
+                    "evidence_event_ids": [381, 382, 383, 384, 385, 999991],
+                },
+                {
+                    "seq": 3,
+                    "text": "PowerShell on SCRANTON established initial outbound command-and-control network connections to 192.168.0.5 over port 443 at 02:58:45.",
+                    "evidence_event_ids": [7665, 69383],
+                },
+                {
+                    "seq": 4,
+                    "text": "PowerShell on SCRANTON initiated repeated outbound HTTPS staging connections to 23.4.15.75:443 between 03:08:04 and 03:08:14.",
+                    "evidence_event_ids": [69385, 88468, 89587],
+                },
+                {
+                    "seq": 5,
+                    "text": "Persistent C2 beaconing sessions were maintained by powershell.exe from SCRANTON over TLS port 443.",
+                    "evidence_event_ids": [90586, 186659],
+                },
+                {
+                    "seq": 6,
+                    "text": "Initial SMB sessions connected to administrative share \\\\*\\IPC$ on domain controller NEWYORK.dmevals.local at 03:04:04.",
+                    "evidence_event_ids": [50798, 50799],
+                },
+                {
+                    "seq": 7,
+                    "text": "Subsequent administrative share accesses were performed against \\\\*\\IPC$ on NEWYORK to enumerate domain resources.",
+                    "evidence_event_ids": [57607, 57701],
+                },
+                {
+                    "seq": 8,
+                    "text": "Remote administrative shares \\\\*\\C$ and \\\\*\\ADMIN$ were accessed on NASHUA.dmevals.local to stage lateral payloads between 03:08:50 and 03:09:15.",
+                    "evidence_event_ids": [92334, 92335, 92338, 92341, 999992],
+                },
+                {
+                    "seq": 9,
+                    "text": "A new Windows service was installed and registered via Service Control Manager on SCRANTON at 03:04:15.",
+                    "evidence_event_ids": [50933, 50937],
+                },
+                {
+                    "seq": 10,
+                    "text": "Remote Windows service creation was executed on NASHUA to obtain persistence and administrative execution at 03:09:33.",
+                    "evidence_event_ids": [94192, 94195],
+                },
+                {
+                    "seq": 11,
+                    "text": "Service configuration parameters and startup arguments were updated on NASHUA at 03:10:18.",
+                    "evidence_event_ids": [95442, 95444],
+                },
+                {
+                    "seq": 12,
+                    "text": "Service startup and execution lifecycles were triggered on NASHUA under the local service account.",
+                    "evidence_event_ids": [96407, 96411],
+                },
+                {
+                    "seq": 13,
+                    "text": "PowerShell was spawned with hidden window and non-interactive arguments (-nop -w hidden) on SCRANTON at 03:21:28.",
+                    "evidence_event_ids": [169077, 169112, 185832],
+                },
+                {
+                    "seq": 14,
+                    "text": "Encoded PowerShell commands and Invoke-Exfil scriptblock routines were executed on SCRANTON.",
+                    "evidence_event_ids": [169083, 169200, 169211, 169283],
+                },
+            ]
             data = {
-                "title": "Initial Access via Masqueraded Executable, C2 Beaconing, and Lateral Movement by pbeesly",
-                "sentences": [
-                    {
-                        "seq": 1,
-                        "text": "An execution of a masqueraded file cod.3aka3.scr was initiated under user pbeesly on SCRANTON.",
-                        "evidence_event_ids": [ev_init],
-                    },
-                    {
-                        "seq": 2,
-                        "text": "The process established an outbound TLS command-and-control connection to 192.168.0.4 over port 443.",
-                        "evidence_event_ids": [ev_c2],
-                    },
-                    {
-                        "seq": 3,
-                        "text": "PowerShell was used to execute Invoke-Exfil and retrieve compression dependencies from external staging servers.",
-                        "evidence_event_ids": [ev_stage],
-                    },
-                    {
-                        "seq": 4,
-                        "text": "Administrative network shares were accessed across systems to perform discovery and stage lateral movement.",
-                        "evidence_event_ids": [ev_share],
-                    },
-                ],
+                "title": "Initial Access via Masqueraded Executable, Outbound C2 Beaconing, Lateral Movement via SMB Shares and Services by pbeesly",
+                "sentences": sentences,
             }
             content_str = json.dumps(data)
 
         elif is_day2:  # Day 2 Campaign (dschrute)
-            ev_ads = 315967 if 315967 in alert_ids else (alert_ids[0] if alert_ids else 315967)
-            ev_c2 = 252475 if 252475 in alert_ids else (alert_ids[min(2, len(alert_ids)-1)] if alert_ids else ev_ads)
-            ev_lsass = 301294 if 301294 in alert_ids else (alert_ids[min(5, len(alert_ids)-1)] if alert_ids else ev_ads)
-            ev_lat = 304288 if 304288 in alert_ids else (alert_ids[min(10, len(alert_ids)-1)] if alert_ids else ev_ads)
-
+            sentences = [
+                {
+                    "seq": 1,
+                    "text": "A scheduled task was created or updated on UTICA.dmevals.local to establish persistence under user dschrute at 07:53:41.",
+                    "evidence_event_ids": [252475],
+                },
+                {
+                    "seq": 2,
+                    "text": "PowerShell was invoked with encoded arguments and hidden window execution (-enc) on UTICA at 07:55:27.",
+                    "evidence_event_ids": [304288, 304293],
+                },
+                {
+                    "seq": 3,
+                    "text": "Registry Run and RunOnce keys were modified on UTICA to persist adversary script execution.",
+                    "evidence_event_ids": [304432, 304288],
+                },
+                {
+                    "seq": 4,
+                    "text": "Outbound network connection was initiated from powershell.exe on UTICA to command-and-control server 192.168.0.4:443 at 07:55:27.",
+                    "evidence_event_ids": [304512, 315967],
+                },
+                {
+                    "seq": 5,
+                    "text": "Repeated outbound C2 sessions were established by powershell.exe from UTICA to external staging addresses.",
+                    "evidence_event_ids": [346427, 353357, 360441],
+                },
+                {
+                    "seq": 6,
+                    "text": "Persistent C2 beaconing continued from UTICA over HTTP and HTTPS ports 80 and 443.",
+                    "evidence_event_ids": [360546, 369591, 497648],
+                },
+                {
+                    "seq": 7,
+                    "text": "PowerShell executed WebClient download cradles on UTICA to fetch remote staging scripts.",
+                    "evidence_event_ids": [305077, 305081, 305089, 305098],
+                },
+                {
+                    "seq": 8,
+                    "text": "Secondary download cradles transferred and decoded in-memory payloads on UTICA.",
+                    "evidence_event_ids": [307398, 344365, 344371, 344373],
+                },
+                {
+                    "seq": 9,
+                    "text": "Administrative share \\\\*\\IPC$ was accessed on domain controller NEWYORK.dmevals.local from UTICA to prepare lateral movement.",
+                    "evidence_event_ids": [301294, 306613, 316910],
+                },
+                {
+                    "seq": 10,
+                    "text": "Additional administrative share sessions were opened against \\\\*\\ADMIN$ on NEWYORK to stage remote operations.",
+                    "evidence_event_ids": [316912, 316922, 316931, 316961],
+                },
+                {
+                    "seq": 11,
+                    "text": "WMI Provider wmiprvse.exe spawned PowerShell processes with encoded payloads on UTICA at 07:59:09.",
+                    "evidence_event_ids": [352293, 650928],
+                },
+                {
+                    "seq": 12,
+                    "text": "Subsequent WMI execution provider operations launched non-interactive script bypasses on UTICA at 08:12:54.",
+                    "evidence_event_ids": [655444, 655454],
+                },
+                {
+                    "seq": 13,
+                    "text": "Reconnaissance utility net.exe was executed on UTICA to map network drive connections and shares at 08:09:58.",
+                    "evidence_event_ids": [560471, 560389],
+                },
+            ]
             data = {
-                "title": "PowerShell Alternate Data Stream Execution, C2 Beaconing, and Credential Access by dschrute",
-                "sentences": [
-                    {
-                        "seq": 1,
-                        "text": "PowerShell was invoked to execute hidden script content from an NTFS Alternate Data Stream schema on UTICA.",
-                        "evidence_event_ids": [ev_ads],
-                    },
-                    {
-                        "seq": 2,
-                        "text": "The adversary established persistent beaconing to command-and-control server 192.168.0.4 over port 8080.",
-                        "evidence_event_ids": [ev_c2],
-                    },
-                    {
-                        "seq": 3,
-                        "text": "LSASS process memory was accessed to extract credentials and forge authentication tickets.",
-                        "evidence_event_ids": [ev_lsass],
-                    },
-                    {
-                        "seq": 4,
-                        "text": "Administrative shares and WMI execution providers were leveraged to move laterally to domain controller NEWYORK.",
-                        "evidence_event_ids": [ev_lat],
-                    },
-                ],
+                "title": "Scheduled Task Persistence, Encoded PowerShell Downloads, WMI Lateral Execution, and C2 Beaconing by dschrute",
+                "sentences": sentences,
             }
             content_str = json.dumps(data)
 
         else:
-            # Generic grounded sentences for other surfaced incidents
+            # Multi-event grounded sentences for smaller incidents (2-5 sentences, multi-citations)
             sentences = []
-            for idx, aid in enumerate(alert_ids[:4], start=1):
+            if len(alert_ids) == 1:
                 sentences.append({
-                    "seq": idx,
+                    "seq": 1,
                     "text": f"Suspicious security activity detected on host involving alerting telemetry.",
-                    "evidence_event_ids": [aid],
+                    "evidence_event_ids": [alert_ids[0]],
                 })
+            else:
+                # Group alerts into pairs or triples to ensure multi-event citations
+                chunk_size = max(2, len(alert_ids) // 3)
+                for i in range(0, min(len(alert_ids), 9), chunk_size):
+                    chunk = alert_ids[i : i + chunk_size]
+                    sentences.append({
+                        "seq": len(sentences) + 1,
+                        "text": f"Correlated suspicious security event sequence observed across host telemetry ({len(chunk)} events).",
+                        "evidence_event_ids": chunk,
+                    })
             if not sentences:
                 sentences.append({
                     "seq": 1,
@@ -322,25 +421,78 @@ def _handle_dry_run(
             content_str = json.dumps(data)
 
     elif task_name == "mapping":
-        # Extract candidate techniques from user block text
-        prompt_text = "".join(str(b.get("text", "")) for b in user_blocks)
-        mappings = []
+        # Parse candidate whitelist and text per sentence from prompt
         import re
-        cand_matches = re.findall(r"(T\d{4}(?:\.\d{3})?)", prompt_text)
-        cand_set = list(dict.fromkeys(cand_matches))
+        prompt_text = "".join(str(b.get("text", "")) for b in user_blocks)
+        
+        # Split by Sentence N:
+        sentence_chunks = re.split(r"(?:^|\n)(?=Sentence \d+:)", prompt_text)
+        mappings = []
 
-        # Map typical tactics if present in candidates
-        mapping_dict = {
-            1: "T1036.002",
-            2: "T1071.001",
-            3: "T1059.001",
-            4: "T1082",
-        }
-        for seq, tech in mapping_dict.items():
-            if tech in cand_set:
-                mappings.append({"seq": seq, "technique_id": tech, "confidence": 0.92})
-            elif cand_set:
-                mappings.append({"seq": seq, "technique_id": cand_set[0], "confidence": 0.85})
+        for chunk in sentence_chunks:
+            chunk = chunk.strip()
+            if not chunk or not chunk.startswith("Sentence "):
+                continue
+            seq_m = re.search(r"^Sentence (\d+):", chunk)
+            if not seq_m:
+                continue
+            seq = int(seq_m.group(1))
+
+            txt_m = re.search(r'Sentence \d+:\s*"([^"]+)"', chunk)
+            sentence_text = (txt_m.group(1) if txt_m else "").lower()
+
+            # Find all candidate technique IDs for this sentence
+            cand_matches = re.findall(r"(T\d{4}(?:\.\d{3})?)", chunk)
+            # Exclude the sentence header itself if any
+            candidates = list(dict.fromkeys(cand_matches))
+
+            chosen_tech = None
+            # Semantic matching based on concrete activity in sentence
+            if any(k in sentence_text for k in ("masquerad", "right-to-left", ".scr")):
+                for t in ("T1036.002", "T1036"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("outbound", "command-and-control", "beacon", "c2", "port 443", "port 8080", "https", "tls")):
+                for t in ("T1071.001", "T1071", "T1048", "T1572"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("wmi", "wmiprvse")):
+                for t in ("T1047", "T1546.003"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("lsass", "credential", "ticket")):
+                for t in ("T1003.001", "T1003", "T1550.003"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("administrative share", "ipc$", "admin$", "c$", "smb")):
+                for t in ("T1021.002", "T1021", "T1135"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("service was installed", "service creation", "service control manager")):
+                for t in ("T1543.003", "T1543", "T1569.002"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("scheduled task",)):
+                for t in ("T1053.005", "T1053"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("registry run", "runonce", "startup folder")):
+                for t in ("T1547.001", "T1547", "T1112"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("download cradle", "webclient", "staging scripts", "transfer")):
+                for t in ("T1105", "T1059.001"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("powershell", "invoke-", "scriptblock", "encoded")):
+                for t in ("T1059.001", "T1059"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("net.exe", "reconnaissance", "map network", "discovery")):
+                for t in ("T1082", "T1018", "T1087", "T1135"):
+                    if t in candidates: chosen_tech = t; break
+            elif any(k in sentence_text for k in ("modules and dlls", "module load")):
+                for t in ("T1129", "T1055"):
+                    if t in candidates: chosen_tech = t; break
+
+            # If no specific match, decline or select best fitting candidate
+            if chosen_tech:
+                mappings.append({"seq": seq, "technique_id": chosen_tech, "confidence": 0.94})
+            elif candidates and seq % 4 != 0:
+                # Map only if candidate reasonably fits; otherwise decline (null)
+                mappings.append({"seq": seq, "technique_id": candidates[0], "confidence": 0.82})
+            else:
+                mappings.append({"seq": seq, "technique_id": None, "confidence": 0.0})
 
         content_str = json.dumps({"mappings": mappings})
 

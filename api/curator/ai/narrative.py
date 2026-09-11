@@ -23,27 +23,28 @@ from curator.pipeline.evidence import fetch_incident_evidence
 
 logger = logging.getLogger(__name__)
 
-_NARRATIVE_SYSTEM_PROMPT = """You are a senior digital forensics investigator writing a precise incident narrative for a security operations center.
-Your task is to review the chronological events and security alerts for an incident and produce an executive title and a concise, numbered sequence of narrative sentences.
+_NARRATIVE_SYSTEM_PROMPT = """You are a senior digital forensics investigator writing a comprehensive, evidence-grounded incident narrative for a security operations center.
+Your task is to review the chronological events and security alerts for an incident and produce an executive title and a detailed, numbered sequence of forensic narrative sentences.
 
-STRICT FACTUAL GROUNDING RULES:
-1. Describe ONLY actions and facts directly demonstrated by the provided telemetry events.
-2. NEVER speculate, assume intent, or extrapolate steps not present in the events.
-3. NEVER state a timestamp or host that is not explicitly present in the supporting events.
-4. For every sentence, provide the exact IDs of the specific events that prove that sentence in `evidence_event_ids`.
-5. Maintain strictly chronological order matching the sequence of events.
-6. The output must be pure JSON conforming to the schema:
+STRICT FORENSIC GROUNDING & CITATION RULES:
+1. CITE EVERY SUPPORTING EVENT: Every sentence MUST cite ALL events that support or demonstrate that claim in `evidence_event_ids`. For repeated connections, multiple share accesses, or multi-host activity, cite EVERY relevant event ID, NEVER just a single representative ID.
+2. PREFER SPECIFIC OVER SUMMARY: Detail exact concrete values from the telemetry—process names, full command lines, file paths, source/destination IP addresses, destination ports, and timestamps. For example: "PowerShell on SCRANTON connected to 192.168.0.4:443 fourteen times between 03:08:12 and 03:14:40" beats "established C2 beaconing."
+3. ONE STEP PER SENTENCE: Do not merge disparate steps (e.g. discovery, network share access, and lateral movement) into a single high-level line. Break each technical action into its own chronological sentence.
+4. FACTUAL GROUNDING: Describe ONLY actions and facts directly demonstrated by the provided telemetry events. NEVER speculate or extrapolate unobserved steps.
+5. TARGET LENGTH GUIDANCE: Produce 12–25 sentences for a large incident (many alerts/hosts), and 2–5 sentences for a small incident.
+6. Output format MUST be pure JSON conforming to:
 {
-  "title": "<Brief title describing the core incident>",
+  "title": "<Concise executive title describing the incident narrative>",
   "sentences": [
     {
       "seq": 1,
-      "text": "<Sentence describing the factual event step>",
-      "evidence_event_ids": [<integer event id>, ...]
+      "text": "<Specific forensic description using concrete values>",
+      "evidence_event_ids": [<integer event id>, <integer event id>, ...]
     }
   ]
 }
 """
+
 
 
 def generate_incident_narrative(
@@ -223,6 +224,11 @@ def generate_incident_narrative(
 
     session.commit()
 
+    ev_counts = [len(s["evidence_event_ids"]) for s in validated_sentences]
+    import numpy as np
+    mean_ev_ids = float(np.mean(ev_counts)) if ev_counts else 0.0
+    median_ev_ids = float(np.median(ev_counts)) if ev_counts else 0.0
+
     return {
         "incident_id": incident_id,
         "title": title,
@@ -230,6 +236,8 @@ def generate_incident_narrative(
         "dropped_ids_count": dropped_ids_count,
         "total_claimed_ids": total_ids_count,
         "valid_ids_count": total_ids_count - dropped_ids_count,
+        "mean_evidence_ids_per_sentence": mean_ev_ids,
+        "median_evidence_ids_per_sentence": median_ev_ids,
         "usage": {
             "input_tokens": resp["input_tokens"],
             "output_tokens": resp["output_tokens"],
@@ -238,3 +246,4 @@ def generate_incident_narrative(
             "cost_usd": resp["estimated_cost_usd"],
         },
     }
+
