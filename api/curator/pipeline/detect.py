@@ -86,6 +86,12 @@ _RECON_BINARIES = {
     "ipconfig.exe",
 }
 _ADMIN_SHARES = {"ADMIN$", "C$", "IPC$"}
+_STAGING_PATH_RE = re.compile(
+    r"(\\appdata\\local\\temp\\|c:\\programdata\\|\\appdata\\roaming\\"
+    r"|\\users\\[^\\]+\\documents\\|\\windows\\temp\\)",
+    re.IGNORECASE,
+)
+_STAGING_EXTENSIONS = (".zip", ".rar", ".7z", ".gz", ".tar", ".cab", ".dat", ".db")
 
 # 6.1a: Benign Windows scheduled tasks to ignore in CUR-008
 _BENIGN_TASK_SUBSTRINGS = (
@@ -573,5 +579,43 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
             "medium",
             ["T1218", "T1059.005"],
         )
+
+    # --------------------------------------------------------------------------
+    # Rule CUR-021: Windows Remote Management (WinRM) Activity
+    # EventIDs: Sysmon 1 / Security 4688 (wsmprovhost.exe spawn),
+    #           Sysmon 3 (network connection to port 5985 or 5986)
+    # --------------------------------------------------------------------------
+    if eid in ("1", "4688") and proc_name == "wsmprovhost.exe":
+        add_alert(
+            "CUR-021",
+            "WinRM Remote Management Host Process Spawned",
+            "high",
+            ["T1021.006"],
+        )
+    elif eid == "3" and dst_port in (5985, 5986) and not is_ignorable_ip(dst_ip or ""):
+        add_alert(
+            "CUR-021",
+            "Network Connection to WinRM Port (5985/5986)",
+            "medium",
+            ["T1021.006", "T1059.001"],
+        )
+
+    # --------------------------------------------------------------------------
+    # Rule CUR-022: Data Staging — File Write to Temp or ProgramData Directory
+    # EventIDs: Sysmon 11 (file creation)
+    # Fires when a file is created in a temp/staging directory that is likely
+    # preceding collection or exfiltration (T1074).
+    # --------------------------------------------------------------------------
+    if eid == "11" and file_path:
+        if (
+            _STAGING_PATH_RE.search(file_path)
+            and file_path.lower().endswith(_STAGING_EXTENSIONS)
+        ):
+            add_alert(
+                "CUR-022",
+                "Archive or Data File Created in Staging Directory",
+                "medium",
+                ["T1074", "T1560"],
+            )
 
     return alerts

@@ -48,4 +48,11 @@ export async function getAccuracy(incidentId, { signal } = {}) {
   return res.json()
 }
 
-
+export async function challengeIncident(id, { signal } = {}) {
+  const res = await fetch(`${API_URL}/incidents/${id}/challenge`, {
+    method: 'POST',
+    signal,
+  })
+  if (!res.ok) throw new Error(`POST /incidents/${id}/challenge returned ${res.status}`)
+  return res.json()
+}

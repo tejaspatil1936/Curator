@@ -375,4 +375,16 @@ def get_incident_accuracy(
     return evaluate_accuracy(session)
 
 
+@app.post("/incidents/{incident_id}/challenge")
+def challenge_incident_endpoint(
+    incident_id: int, session: Session = Depends(db.get_session)
+) -> dict:
+    """Run the Challenge agent for an incident (system_design.md §7.3).
 
+    Returns structured counter-analysis with alternative hypotheses, missing evidence,
+    a proposed query result, and updated confidence (old_confidence, new_confidence).
+    In DRY_RUN mode returns the grounded fixture immediately with no API call.
+    """
+    from curator.ai.challenge import challenge_incident
+
+    return challenge_incident(incident_id, session=session)

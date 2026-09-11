@@ -185,6 +185,36 @@ def map_incident_techniques(
             extra_terms.append("indicator removal file deletion anti-forensics evidence destruction secure delete")
             context_terms = [t for t in context_terms if "process creation" not in t]
 
+        # T1105 boost: DownloadFile/DownloadString/WebRequest/certutil/BITS = Ingress Tool Transfer
+        download_keywords = (
+            "downloadfile", "downloadstring", "invoke-webrequest",
+            "certutil -urlcache", "certutil -f", "bitstransfer", "start-bitstransfer",
+            "webclient", "net.webclient",
+        )
+        if any(kw in combined_lower for kw in download_keywords):
+            extra_terms.append(
+                "ingress tool transfer download file remote host tool staging"
+                " T1105 lateral tool transfer"
+            )
+
+        # T1021.006 boost: wsmprovhost / port 5985/5986 context = WinRM
+        winrm_keywords = ("wsmprovhost", "5985", "5986", "winrm", "wsman", "powershell remoting")
+        if any(kw in combined_lower for kw in winrm_keywords):
+            extra_terms.append(
+                "windows remote management WinRM remote services lateral movement"
+                " T1021.006 PowerShell remoting wsmprovhost"
+            )
+
+        # T1074 boost: archive/zip/staging preceding upload = Data Staged
+        staging_keywords = (
+            "zip", "rar", "compress", "createfromdirectory", "stage", "staging",
+            "poshspy", "zipfile", "archive",
+        )
+        if any(kw in combined_lower for kw in staging_keywords):
+            extra_terms.append(
+                "data staged local data staging collection archive compress T1074"
+            )
+
         # Deduplicate terms while preserving order
         unique_context = list(dict.fromkeys(context_terms))
         enriched_query = f"{cleaned_txt} {' '.join(extra_terms)} {' '.join(unique_context[:20])}".strip()

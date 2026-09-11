@@ -524,6 +524,16 @@ def _handle_dry_run(
         cache_read = 0
         cache_write = 0
 
+    elif task_name == "challenge":
+        # Return the grounded DRY_RUN fixture from challenge.py
+        from curator.ai.challenge import _DRY_RUN_FIXTURE
+        content_str = json.dumps(_DRY_RUN_FIXTURE)
+        in_tok = 2000
+        out_tok = 400
+        cache_read = 1800
+        cache_write = 0
+
+
     latency_ms = int((time.time() - start_time) * 1000) + 45
     cost = _compute_cost(model, in_tok, out_tok, cache_read, cache_write)
 
@@ -556,4 +566,6 @@ def _handle_dry_run(
         "cache_creation_tokens": cache_write,
         "latency_ms": latency_ms,
         "estimated_cost_usd": cost,
+        "dry_run": True,
     }
+

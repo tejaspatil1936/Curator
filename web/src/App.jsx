@@ -10,6 +10,7 @@ import IncidentList from './components/IncidentList.jsx'
 import Narrative from './components/Narrative.jsx'
 import EvidencePanel from './components/EvidencePanel.jsx'
 import Scoreboard from './components/Scoreboard.jsx'
+import ChallengePanel from './components/ChallengePanel.jsx'
 
 export default function App() {
   const [incidents, setIncidents] = useState([])
@@ -248,12 +249,7 @@ export default function App() {
                   )}
 
                   {activeTab === 'challenge' && (
-                    <div className="py-8 text-ink-secondary text-ui">
-                      <p className="font-semibold text-ink mb-2">Adversarial Challenge Dialogue</p>
-                      <p className="text-small text-ink-muted">
-                        Available in Step 5 adversarial challenge verification.
-                      </p>
-                    </div>
+                    <ChallengePanel incident={inc} />
                   )}
 
                   {activeTab === 'accuracy' && (

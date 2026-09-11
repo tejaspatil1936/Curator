@@ -34,6 +34,7 @@ from curator.config import (
     CORRELATE_PROCESS_WINDOW_SECONDS,
     CORRELATE_USER_WINDOW_SECONDS,
     INCIDENT_MIN_ALERTS,
+    settings,
 )
 from curator.db import SessionLocal
 from curator.pipeline.correlate import AlertItem, correlate_alerts
@@ -194,7 +195,6 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
 
     # Step 5b: Planted false alert demo fixture
     if settings.plant_false_alert:
-        from datetime import datetime
         from curator.pipeline.fixtures import (
             PLANTED_ALERT_EVENT_ID,
             PLANTED_HOST,
