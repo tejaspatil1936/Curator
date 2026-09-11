@@ -27,12 +27,15 @@ _NARRATIVE_SYSTEM_PROMPT = """You are a senior digital forensics investigator wr
 Your task is to review the chronological events and security alerts for an incident and produce an executive title and a detailed, numbered sequence of forensic narrative sentences.
 
 STRICT FORENSIC GROUNDING & CITATION RULES:
-1. CITE EVERY SUPPORTING EVENT: Every sentence MUST cite ALL events that support or demonstrate that claim in `evidence_event_ids`. For repeated connections, multiple share accesses, or multi-host activity, cite EVERY relevant event ID, NEVER just a single representative ID.
-2. PREFER SPECIFIC OVER SUMMARY: Detail exact concrete values from the telemetry—process names, full command lines, file paths, source/destination IP addresses, destination ports, and timestamps. For example: "PowerShell on SCRANTON connected to 192.168.0.4:443 fourteen times between 03:08:12 and 03:14:40" beats "established C2 beaconing."
-3. ONE STEP PER SENTENCE: Do not merge disparate steps (e.g. discovery, network share access, and lateral movement) into a single high-level line. Break each technical action into its own chronological sentence.
-4. FACTUAL GROUNDING: Describe ONLY actions and facts directly demonstrated by the provided telemetry events. NEVER speculate or extrapolate unobserved steps.
-5. TARGET LENGTH GUIDANCE: Produce 12–25 sentences for a large incident (many alerts/hosts), and 2–5 sentences for a small incident.
-6. Output format MUST be pure JSON conforming to:
+1. CITE EVERY SUPPORTING EVENT: Every sentence MUST cite ALL events that support or demonstrate that claim in `evidence_event_ids`. For repeated connections, multiple share accesses, or multi-host activity, cite EVERY relevant event ID from the corpus, NEVER just a single representative ID.
+2. PREFER SPECIFIC OVER SUMMARY: Detail exact concrete values from the telemetry—process names, full command lines, file paths, destination IP addresses, destination ports, and exact timestamps. For example: "PowerShell on SCRANTON connected to 192.168.0.4:443 fourteen times between 03:08:12 and 03:14:40" beats "established C2 beaconing."
+3. EXACT TIMESTAMPS: Always state exact timestamps taken directly from the events (e.g. '02:55:56.151 UTC' or 'between 03:11:40 and 03:15:03 UTC'). Never use rounded, approximate, or estimated time ranges.
+4. NO IP CHARACTERIZATION: Do not characterize IP addresses as 'internal' or 'external' (e.g. 192.168.x.x, 10.x.x.x)—simply state the exact IP address and port.
+5. ONE STEP PER SENTENCE: Do not merge disparate steps (e.g. discovery, network share access, and lateral movement) into a single high-level line. Break each technical action into its own chronological sentence.
+6. FACTUAL GROUNDING: Describe ONLY actions and facts directly demonstrated by the provided telemetry events. NEVER speculate or extrapolate unobserved steps.
+7. CITATION BOUNDARY: Every ID in `evidence_event_ids` MUST be an exact Event ID from the provided Incident Telemetry Corpus. Never invent or synthesize event IDs.
+8. TARGET LENGTH GUIDANCE: Produce 12–25 sentences for a large incident (many alerts/hosts), and 2–5 sentences for a small incident.
+9. Output format MUST be pure JSON conforming to:
 {
   "title": "<Concise executive title describing the incident narrative>",
   "sentences": [
@@ -128,7 +131,7 @@ def generate_incident_narrative(
         model=MODEL_SONNET,
         system_blocks=system_blocks,
         user_blocks=user_blocks,
-        max_tokens=4096,
+        max_tokens=8192,
         session=session,
         incident_id=incident_id,
         task_name="narrative",
@@ -139,10 +142,25 @@ def generate_incident_narrative(
     if raw_content.startswith("```"):
         raw_content = raw_content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
+    parsed_data = None
     try:
         parsed_data = json.loads(raw_content)
     except json.JSONDecodeError as err:
-        logger.error("Failed to parse JSON narrative response: %s\nContent: %s", err, raw_content)
+        logger.warning("Direct JSON decode failed: %s. Attempting graceful repair.", err)
+        # Find the last complete sentence object
+        last_brace = raw_content.rfind("}")
+        if last_brace != -1:
+            candidate = raw_content[:last_brace + 1].strip()
+            if not candidate.endswith("]}"):
+                candidate = candidate.rstrip(" ,") + "\n]}"
+            try:
+                parsed_data = json.loads(candidate)
+                logger.info("Successfully recovered truncated JSON with %d sentences", len(parsed_data.get("sentences", [])))
+            except Exception as repair_err:
+                logger.error("JSON repair also failed: %s", repair_err)
+
+    if not parsed_data:
+        logger.error("Failed to parse JSON narrative response:\nContent: %s", raw_content[:500])
         parsed_data = {
             "title": f"Incident #{incident_id}",
             "sentences": [
@@ -159,8 +177,8 @@ def generate_incident_narrative(
     dropped_details: list[dict[str, Any]] = []
     validated_sentences: list[dict[str, Any]] = []
 
-    for item in sentences_raw:
-        seq = int(item.get("seq", len(validated_sentences) + 1))
+    for idx, item in enumerate(sentences_raw, start=1):
+        seq = idx
         text_content = str(item.get("text", "")).strip()
         claimed_ids = item.get("evidence_event_ids") or []
 

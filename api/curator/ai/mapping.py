@@ -33,8 +33,8 @@ _PORT_TRANSLATIONS: dict[int, str] = {
     8443: "HTTPS TLS HTTP web protocols web traffic application layer communication",
     53: "DNS",
     445: "SMB Windows admin shares file sharing",
-    5985: "WinRM remote management remote services",
-    5986: "WinRM remote management remote services",
+    5985: "WinRM Windows Remote Management remote services PowerShell remoting",
+    5986: "WinRM Windows Remote Management remote services PowerShell remoting HTTPS",
     3389: "RDP remote desktop remote services",
     135: "RPC DCOM",
     88: "Kerberos",
@@ -79,8 +79,12 @@ For each sentence, you are provided a strict whitelist of retrieved candidate AT
 STRICT RULES:
 1. You may ONLY choose a technique_id that appears in the candidate list for that sentence.
 2. Select the best matching technique from the candidate list that accurately reflects the technical action and telemetry.
-3. Decline (omit) ONLY when none of the candidate techniques genuinely fits the activity described. Do not decline merely due to minor uncertainty if a candidate directly matches the mechanism (e.g. PowerShell execution, web C2 beaconing, LSASS memory access, administrative shares, or WMI execution).
-4. Return a JSON object with this exact structure:
+3. PROTOCOL DISTINCTIONS:
+   - Network connections on port 5985/5986 represent WinRM (T1021.006 Windows Remote Management), NOT SMB.
+   - Network connections on port 445 or share accesses (\\\\*\\IPC$, \\\\*\\C$, \\\\*\\ADMIN$) represent SMB (T1021.002 SMB/Windows Admin Shares).
+   - Base64, hidden window (-w hidden), or encoded command (-e / -enc) executions represent Command Obfuscation (T1027.010) or PowerShell (T1059.001).
+4. Decline (omit) ONLY when none of the candidate techniques genuinely fits the activity described. Do not decline merely due to minor uncertainty if a candidate directly matches the mechanism (e.g. PowerShell execution, web C2 beaconing, LSASS memory access, administrative shares, or WMI execution).
+5. Return a JSON object with this exact structure:
 {
   "mappings": [
     {
