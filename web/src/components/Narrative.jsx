@@ -49,7 +49,7 @@ export default function Narrative({
               aria-label={isUnsupported ? `Unsupported claim: ${item.text}` : item.text}
               className={`w-full text-left font-sans text-body transition-colors duration-120 block px-2.5 py-1.5 rounded-sm focus-visible:outline-none ${
                 isSelected
-                  ? 'bg-evidence text-ink'
+                  ? `bg-evidence ${isUnsupported ? 'line-through text-ink/70' : 'text-ink'}`
                   : isUnsupported
                   ? 'text-ink-faint line-through hover:bg-paper-sunk'
                   : 'text-ink hover:bg-paper-sunk hover:underline hover:decoration-dotted hover:decoration-ink-faint'
@@ -72,7 +72,7 @@ export default function Narrative({
             )}
 
             {/* MITRE ATT&CK Technique Badge (DESIGN.md §5.2) */}
-            {item.technique_id && (
+            {item.technique_id && !isUnsupported && (
               <div className="pl-5 pt-1">
                 <span
                   className="font-mono text-mono-sm text-primary cursor-help select-none hover:underline"

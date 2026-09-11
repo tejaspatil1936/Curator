@@ -131,13 +131,19 @@ def verify_batch(
     clean_content = re.sub(r"^```(?:json)?\s*", "", raw_content, flags=re.MULTILINE)
     clean_content = re.sub(r"\s*```$", "", clean_content, flags=re.MULTILINE).strip()
 
+    parsed = None
     try:
-        parsed = json.loads(clean_content)
-        results = parsed.get("results", [])
-    except Exception as exc:
-        logger.error("Failed to parse verifier response for incident #%d: %s; raw: %r", incident_id, exc, raw_content)
-        # Fallback to conservative evaluation
-        results = []
+        parsed = json.loads(clean_content, strict=False)
+    except Exception:
+        try:
+            # Fix unescaped Windows backslashes (e.g. DMEVALS\SCRANTON$) in JSON string values
+            fixed_content = re.sub(r'\\(?!["\\/bfnrtu]|u[0-9a-fA-F]{4})', r'\\\\', clean_content)
+            parsed = json.loads(fixed_content, strict=False)
+        except Exception as exc:
+            logger.error("Failed to parse verifier response for incident #%d: %s; raw: %r", incident_id, exc, raw_content)
+            parsed = None
+
+    results = (parsed or {}).get("results", [])
 
     results_by_seq = {r.get("seq"): r for r in results if isinstance(r, dict) and "seq" in r}
 
