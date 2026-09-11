@@ -100,10 +100,15 @@ def format_forensic_event(ev: dict[str, Any]) -> str:
     # Network details (Code 3 / 1149 / 5140)
     src_ip = ev.get("src_ip") or raw.get("SourceIp") or ""
     dst_ip = ev.get("dst_ip") or raw.get("DestinationIp") or ""
-    dst_port = raw.get("DestinationPort") or (ocsf.get("dst_endpoint") or {}).get("port") or ""
+    raw_port = raw.get("DestinationPort")
+    ocsf_port = (ocsf.get("dst_endpoint") or {}).get("port")
+    if raw_port and ocsf_port and str(raw_port) != str(ocsf_port):
+        dst_port_str = f":{ocsf_port} (RawLog DestinationPort={raw_port} CONFLICT)"
+    else:
+        dst_port = raw_port or ocsf_port or ""
+        dst_port_str = f":{dst_port}" if dst_port else ""
     if src_ip or dst_ip:
-        port_str = f":{dst_port}" if dst_port else ""
-        parts.append(f"Net={src_ip}->{dst_ip}{port_str}")
+        parts.append(f"Net={src_ip}->{dst_ip}{dst_port_str}")
 
     # Share access details (Code 5140, 5145)
     share = raw.get("ShareName") or (ocsf.get("unmapped") or {}).get("ShareName") or ""
