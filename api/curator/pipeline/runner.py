@@ -146,27 +146,8 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 :ts, :host, :user_norm, :process_uid, :is_planted
             ) RETURNING id
         """)
-        ins_res = session.execute(
-            q_insert_alert,
-            [
-                {
-                    "event_id": a["event_id"],
-                    "rule_id": a["rule_id"],
-                    "rule_name": a["rule_name"],
-                    "severity": a["severity"],
-                    "technique_ids": a["technique_ids"],
-                    "ts": a["ts"],
-                    "host": a["host"],
-                    "user_norm": a["user_norm"],
-                    "process_uid": a["process_uid"],
-                    "is_planted": a["is_planted"],
-                }
-                for a in all_alerts
-            ],
-        )
-        db_alert_ids = [r[0] for r in ins_res]
-        for a, aid in zip(all_alerts, db_alert_ids, strict=True):
-            a["id"] = aid
+        for a in all_alerts:
+            a["id"] = session.execute(q_insert_alert, a).scalar_one()
 
     # --------------------------------------------------------------------------
     # Stage 3: Deduplication
@@ -293,7 +274,7 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 "hosts": cluster.hosts,
                 "users": cluster.users,
                 "priority": priority_score,
-                "priority_reason": priority_reason,
+                "priority_reason": json.dumps(priority_reason),
             },
         )
         inc_id = inc_res.scalar_one()
@@ -344,10 +325,15 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 ) ON CONFLICT (incident_id, kind, value) DO UPDATE
                 SET last_seen = EXCLUDED.last_seen,
                     event_ids = EXCLUDED.event_ids
-                RETURNING id, kind, value
             """)
-            ent_res = session.execute(q_ins_ent, entities)
-            ent_rows = [dict(r._mapping) for r in ent_res]
+            session.execute(q_ins_ent, entities)
+            q_get_ent = text(
+                "SELECT id, kind, value FROM entities WHERE incident_id = :inc_id"
+            )
+            ent_rows = [
+                dict(r._mapping)
+                for r in session.execute(q_get_ent, {"inc_id": inc_id})
+            ]
             ent_key_to_id = {
                 (r["kind"], r["value"]): r["id"] for r in ent_rows
             }
