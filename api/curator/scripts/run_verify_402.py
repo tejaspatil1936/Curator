@@ -3,9 +3,9 @@ from curator.ai.verify import verify_incident
 
 def main():
     db = SessionLocal()
-    print("Running verifier on Incident #402 with Claude Haiku 4.5...")
-    res = verify_incident(402, session=db)
-    print(f"Incident #402 Verification Summary:")
+    print("Running verifier on Incident #803 with Claude Haiku 4.5...")
+    res = verify_incident(803, session=db)
+    print(f"Incident #803 Verification Summary:")
     print(f"  Total Checked: {res['checked']}")
     print(f"  Supported: {res['supported']}")
     print(f"  Unsupported: {res['unsupported']}")

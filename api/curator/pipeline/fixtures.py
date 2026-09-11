@@ -37,7 +37,7 @@ def inject_planted_alert(session: Session) -> dict[str, Any] | None:
         logger.info("PLANT_FALSE_ALERT is disabled; skipping planted alert injection")
         return None
 
-    # Find the target incident on SCRANTON (Day 1 pbeesly campaign, #402)
+    # Find the target incident on SCRANTON (Day 1 pbeesly campaign, #803)
     q_inc = text("""
         SELECT id FROM incidents
         WHERE 'SCRANTON' = ANY(hosts) AND 'pbeesly' = ANY(users)
@@ -45,7 +45,7 @@ def inject_planted_alert(session: Session) -> dict[str, Any] | None:
         LIMIT 1
     """)
     inc_row = session.execute(q_inc).fetchone()
-    target_incident_id = inc_row[0] if inc_row else 402
+    target_incident_id = inc_row[0] if inc_row else 803
 
     # Check if already injected with the new synthetic event
     q_check = text("SELECT id, incident_id FROM alerts WHERE is_planted = true AND event_id = :eid LIMIT 1")

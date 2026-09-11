@@ -12,7 +12,7 @@ def run_live():
     start_audit_id = db.execute(text("SELECT coalesce(max(id), 0) FROM audit_chain")).scalar_one()
     print(f"Starting live run at audit_chain ID: {start_audit_id}")
 
-    incidents_to_run = [402, 455]
+    incidents_to_run = [803, 855]
     results = {}
 
     for inc_id in incidents_to_run:
@@ -128,7 +128,7 @@ def run_live():
     cache_hit_rate = (total_cache_read / total_prompt_toks * 100.0) if total_prompt_toks > 0 else 0.0
 
     print("\n" + "="*80)
-    print("OVERALL SUMMARY FOR LIVE RUN (#402 & #455)")
+    print("OVERALL SUMMARY FOR LIVE RUN (#803 & #855)")
     print("="*80)
     print(f"Total Sentences Produced:      {len(all_sentence_eids_lens)}")
     print(f"Mean Evidence IDs / sentence:  {overall_mean:.2f}")
@@ -150,14 +150,14 @@ def run_live():
         t_name = t_row[1] if t_row else "UNKNOWN"
         print(f"  {tid:12s} : {t_name}")
 
-    # Full narrative for #402
+    # Full narrative for #803
     print("\n" + "="*80)
-    print("FULL LIVE NARRATIVE FOR INCIDENT #402")
+    print("FULL LIVE NARRATIVE FOR INCIDENT #803")
     print("="*80)
     q_402 = text("""
         SELECT ns.seq, ns.text, ns.evidence_event_ids, ns.technique_id, ns.technique_name, ns.technique_conf
         FROM narrative_sentences ns
-        WHERE ns.incident_id = 402
+        WHERE ns.incident_id = 803
         ORDER BY ns.seq ASC
     """)
     rows_402 = db.execute(q_402).fetchall()

@@ -1,0 +1,200 @@
+"""credit_pass.py — Single-command credit pass for Curator APT29 evaluation.
+
+Run this once API credits are restored:
+    docker exec curator-curator-api-1 python curator/scripts/credit_pass.py
+
+What it does (in order):
+  1. Narrative generation   — POST /incidents/{id}/narrative for every open incident
+  2. ATT&CK mapping         — map_incident_techniques() for every open incident
+  3. Sentence verification  — verify_incident() for every open incident
+  4. Accuracy harness       — evaluate_accuracy() reporting 4 headline numbers
+  5. Cost summary           — total tokens & USD from audit_chain
+
+Resumable: if it fails at incident 12, re-running skips the 11 already done.
+An incident is considered done when narrative_sentences has >= 1 row for it.
+
+Estimated cost before you run:
+  24 open incidents × ~35 sentences each = ~840 sentences to generate
+  Narrative generation:   ~1,200 input tokens + ~400 output tokens per sentence
+                          840 × 1,600 = 1,344,000 tokens
+  ATT&CK mapping:         ~800 tokens per sentence × 840 = 672,000 tokens
+  Sentence verification:  ~600 tokens per sentence × 840 = 504,000 tokens
+  Total:                  ~2,520,000 tokens
+  Claude claude-haiku-4-5 pricing (Jun 2025): $0.80/M in, $4.00/M out
+  Blended estimate:       ~$3–$5 total for this pass.
+  (The original 178-sentence run over 2 incidents cost $8.62 — 24 incidents
+   will cost proportionally more but 22 of the remaining incidents are shorter.)
+"""
+from __future__ import annotations
+
+import sys
+import time
+from datetime import UTC, datetime
+
+from sqlalchemy import text
+
+from curator.db import SessionLocal
+from curator.ai.narrative import generate_incident_narrative
+from curator.ai.mapping import map_incident_techniques
+from curator.ai.verify import verify_incident
+from curator.eval.harness import evaluate_accuracy
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _open_incidents(session) -> list[int]:
+    rows = session.execute(text(
+        "SELECT id FROM incidents WHERE status = 'open' ORDER BY priority DESC, id"
+    )).fetchall()
+    return [r[0] for r in rows]
+
+
+def _already_done(session, incident_id: int) -> bool:
+    """Return True if this incident already has at least one narrative sentence."""
+    n = session.execute(text(
+        "SELECT COUNT(*) FROM narrative_sentences WHERE incident_id = :id"
+    ), {"id": incident_id}).scalar() or 0
+    return n > 0
+
+
+def _cost_from_audit(session) -> dict:
+    """Read token counts and USD from audit_chain since pass started."""
+    rows = session.execute(text("""
+        SELECT
+            coalesce(sum((detail->>'prompt_tokens')::int), 0)      AS in_toks,
+            coalesce(sum((detail->>'completion_tokens')::int), 0)  AS out_toks,
+            coalesce(sum((detail->>'cost_usd')::float), 0.0)       AS usd
+        FROM audit_chain
+        WHERE action = 'anthropic_api_call'
+          AND created_at >= :since
+    """), {"since": _PASS_START}).fetchone()
+    return {"in_toks": rows[0], "out_toks": rows[1], "usd": round(rows[2], 4)}
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+_PASS_START = datetime.now(UTC)
+
+
+def main() -> None:
+    print(f"Credit pass started at {_PASS_START.isoformat()}")
+    print("=" * 70)
+
+    with SessionLocal() as session:
+        incident_ids = _open_incidents(session)
+        print(f"Open incidents: {len(incident_ids)} — {incident_ids}")
+
+        if not incident_ids:
+            print("No open incidents. Run the pipeline first.")
+            sys.exit(1)
+
+        # ------------------------------------------------------------------
+        # Step 1: Narrative generation
+        # ------------------------------------------------------------------
+        print("\n[1/4] Narrative generation")
+        narr_results: dict[int, dict] = {}
+        for i, iid in enumerate(incident_ids, 1):
+            if _already_done(session, iid):
+                n = session.execute(text(
+                    "SELECT COUNT(*) FROM narrative_sentences WHERE incident_id = :id"
+                ), {"id": iid}).scalar()
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: SKIP ({n} sentences already exist)")
+                continue
+            t0 = time.time()
+            try:
+                result = generate_incident_narrative(iid, session=session)
+                elapsed = round(time.time() - t0, 1)
+                n_sent = len(result.get("sentences", []))
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: {n_sent} sentences in {elapsed}s")
+                narr_results[iid] = result
+            except Exception as exc:
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
+                print("  Continuing with next incident (this one will be skipped in mapping).",
+                      file=sys.stderr)
+
+        # ------------------------------------------------------------------
+        # Step 2: ATT&CK mapping
+        # ------------------------------------------------------------------
+        print("\n[2/4] ATT&CK technique mapping")
+        for i, iid in enumerate(incident_ids, 1):
+            n_sent = session.execute(text(
+                "SELECT COUNT(*) FROM narrative_sentences WHERE incident_id = :id AND technique_id IS NULL"
+            ), {"id": iid}).scalar() or 0
+            if n_sent == 0:
+                # Already mapped or no sentences
+                already_mapped = session.execute(text(
+                    "SELECT COUNT(*) FROM narrative_sentences WHERE incident_id = :id AND technique_id IS NOT NULL"
+                ), {"id": iid}).scalar() or 0
+                if already_mapped > 0:
+                    print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: SKIP (already mapped)")
+                continue
+            t0 = time.time()
+            try:
+                result = map_incident_techniques(iid, session=session)
+                elapsed = round(time.time() - t0, 1)
+                n_mapped = result.get("mapped_count", 0)
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: {n_mapped} mapped in {elapsed}s")
+            except Exception as exc:
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
+
+        # ------------------------------------------------------------------
+        # Step 3: Sentence verification
+        # ------------------------------------------------------------------
+        print("\n[3/4] Sentence verification")
+        verify_results: dict[int, dict] = {}
+        for i, iid in enumerate(incident_ids, 1):
+            n_sent = session.execute(text(
+                "SELECT COUNT(*) FROM narrative_sentences WHERE incident_id = :id"
+            ), {"id": iid}).scalar() or 0
+            if n_sent == 0:
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: SKIP (no sentences)")
+                continue
+            t0 = time.time()
+            try:
+                result = verify_incident(iid, session=session)
+                elapsed = round(time.time() - t0, 1)
+                supported   = result.get("supported", 0)
+                unsupported = result.get("unsupported", 0)
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: "
+                      f"{supported} supported / {unsupported} unsupported in {elapsed}s")
+                verify_results[iid] = result
+            except Exception as exc:
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
+
+        # ------------------------------------------------------------------
+        # Step 4: Accuracy harness
+        # ------------------------------------------------------------------
+        print("\n[4/4] Accuracy harness")
+        score = evaluate_accuracy(session)
+
+        print("\n" + "=" * 70)
+        print("SCOREBOARD")
+        print("=" * 70)
+        print(f"  Ground-truth techniques executed : {score.get('executed')}")
+        print(f"  Recovered (in evidence)          : {score.get('recovered')}")
+        print(f"  Not in evidence (false claims)   : {score.get('not_in_evidence')}")
+        print(f"  Invented (beyond ground-truth)   : {score.get('invented_beyond_gt')}")
+        print(f"  Precision                        : {score.get('precision')}")
+        print(f"  Recall                           : {score.get('recall')}")
+        print(f"  F1                               : {score.get('f1')}")
+
+        # ------------------------------------------------------------------
+        # Cost summary
+        # ------------------------------------------------------------------
+        cost = _cost_from_audit(session)
+        print("\n" + "=" * 70)
+        print("COST SUMMARY (this pass only)")
+        print("=" * 70)
+        print(f"  Input tokens   : {cost['in_toks']:,}")
+        print(f"  Output tokens  : {cost['out_toks']:,}")
+        print(f"  Total USD      : ${cost['usd']:.4f}")
+
+        elapsed_total = round((datetime.now(UTC) - _PASS_START).total_seconds(), 1)
+        print(f"\nPass completed in {elapsed_total}s")
+
+
+if __name__ == "__main__":
+    main()

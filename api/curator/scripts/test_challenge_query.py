@@ -46,9 +46,9 @@ def test_time_range():
     print("PASS: time range")
 
 def test_incident_id_scope():
-    sql, params = query_filters_to_sql({}, incident_id=402)
+    sql, params = query_filters_to_sql({}, incident_id=803)
     assert "e.incident_id = :incident_id" in sql
-    assert params["incident_id"] == 402
+    assert params["incident_id"] == 803
     print("PASS: incident_id scope")
 
 def test_sql_injection_rejected():
@@ -64,7 +64,7 @@ def test_combined_filters():
         "hosts": ["scranton"],
         "process_names": ["powershell.exe"],
         "time_after": "2019-06-21T02:00:00",
-    }, incident_id=402, max_rows=25)
+    }, incident_id=803, max_rows=25)
     assert "WHERE" in sql
     assert "AND" in sql
     assert params["max_rows"] == 25

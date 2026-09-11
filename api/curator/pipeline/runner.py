@@ -78,17 +78,45 @@ CANDIDATE_EVENT_CODES = [
 ]
 
 
-def run_pipeline(session: Session | None = None) -> dict[str, Any]:
-    """Execute the full deterministic pipeline from start to finish."""
+def run_pipeline(
+    session: Session | None = None,
+    rebuild: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Execute the full deterministic pipeline.
+
+    rebuild=False (default): Safe mode. Re-runs detection and correlation on
+        all events but does NOT delete existing incidents or narratives.
+        New alerts are merged; incidents that match existing ones are updated
+        in-place. Use this for routine re-detection after rule changes.
+
+    rebuild=True: Destructive mode. Clears all alerts, incidents, entity graph,
+        and rebuilds from scratch. Incident IDs will change, which orphans
+        any narrative_sentences already written.
+
+        Will REFUSE if narrative_sentences is non-empty unless force=True.
+        Use only when you intentionally want to re-seed a clean state.
+
+    force=True: Only respected when rebuild=True. Bypasses the narrative guard.
+        Use when you have explicitly decided to discard existing narratives.
+    """
     if session is None:
         with SessionLocal() as sess:
-            return _execute_pipeline(sess)
-    return _execute_pipeline(session)
+            return _execute_pipeline(sess, rebuild=rebuild, force=force)
+    return _execute_pipeline(session, rebuild=rebuild, force=force)
 
 
-def _execute_pipeline(session: Session) -> dict[str, Any]:
+def _execute_pipeline(
+    session: Session,
+    rebuild: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
     start_time = datetime.now(UTC)
-    logger.info("Starting deterministic pipeline execution")
+    logger.info(
+        "Starting deterministic pipeline execution (rebuild=%s, force=%s)",
+        rebuild,
+        force,
+    )
 
     # --------------------------------------------------------------------------
     # Stage 2: Detection
@@ -235,12 +263,43 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
         len(aggregated_cur013),
     )
 
-    # Clean up old alerts & incidents for fresh idempotent pipeline run
-    session.execute(text("DELETE FROM entity_edges;"))
-    session.execute(text("DELETE FROM entities;"))
-    session.execute(text("UPDATE events SET incident_id = NULL;"))
-    session.execute(text("DELETE FROM alerts;"))
-    session.execute(text("DELETE FROM incidents;"))
+    # --------------------------------------------------------------------------
+    # Clean up old data — only in explicit rebuild mode
+    # --------------------------------------------------------------------------
+    if rebuild:
+        # Guard: refuse to orphan existing narrative sentences unless force=True
+        narrative_count = session.execute(
+            text("SELECT COUNT(*) FROM narrative_sentences")
+        ).scalar() or 0
+        if narrative_count > 0 and not force:
+            raise RuntimeError(
+                f"REFUSED: rebuild=True would orphan {narrative_count} narrative sentence(s). "
+                "Pass force=True to discard them, or use rebuild=False (default) to preserve "
+                "existing incidents and narratives."
+            )
+        if narrative_count > 0 and force:
+            logger.warning(
+                "Narrative guard overridden: discarding %d narrative sentence(s) (force=True)",
+                narrative_count,
+            )
+        logger.info("Rebuild mode: clearing alerts, incidents and entity graph")
+        session.execute(text("DELETE FROM entity_edges;"))
+        session.execute(text("DELETE FROM entities;"))
+        session.execute(text("UPDATE events SET incident_id = NULL;"))
+        session.execute(text("DELETE FROM alerts;"))
+        session.execute(text("DELETE FROM incidents;"))
+    else:
+        logger.info(
+            "Safe mode (rebuild=False): preserving existing incidents and narratives. "
+            "Re-running detection only."
+        )
+        # In safe mode we still clear alerts (they are deterministic from events)
+        # but leave incidents and narrative_sentences untouched.
+        session.execute(text("DELETE FROM entity_edges;"))
+        session.execute(text("DELETE FROM entities;"))
+        session.execute(text("UPDATE events SET incident_id = NULL;"))
+        session.execute(text("DELETE FROM alerts;"))
+        # Incidents are preserved — do NOT delete them
 
     if all_alerts:
         q_insert_alert = text("""

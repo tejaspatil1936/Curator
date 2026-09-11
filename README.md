@@ -97,7 +97,7 @@ curl -X POST http://localhost:8000/pipeline/run
 Open http://localhost:5173, select an incident, and click **Generate narrative** — or call:
 
 ```bash
-curl -X POST http://localhost:8000/incidents/402/narrative
+curl -X POST http://localhost:8000/incidents/803/narrative
 ```
 
 ### 6. View the scoreboard

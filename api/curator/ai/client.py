@@ -231,8 +231,8 @@ def _handle_dry_run(
         ).fetchone()
         inc_users = [str(u).lower() for u in (inc_meta[0] if inc_meta else []) or []]
 
-        is_day1 = any("pbeesly" in u for u in inc_users) or incident_id in (402, 262, 131)
-        is_day2 = any("dschrute" in u for u in inc_users) or incident_id in (455, 315, 184)
+        is_day1 = any("pbeesly" in u for u in inc_users) or incident_id in (803, 262, 131)
+        is_day2 = any("dschrute" in u for u in inc_users) or incident_id in (855, 315, 184)
 
         if is_day1:  # Day 1 Campaign (pbeesly)
             # High-fidelity multi-sentence narrative covering initial execution, module loading,

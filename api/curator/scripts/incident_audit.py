@@ -18,9 +18,9 @@ with SessionLocal() as s:
               f"incident_id={r.incident_id} planted={r.is_planted} "
               f"status={r.status} priority={r.priority}")
 
-    # ── 2. #402 and #455 ─────────────────────────────────────────────────────
-    print("\n=== INCIDENTS #402 AND #455 ===")
-    for iid in [402, 455]:
+    # ── 2. #803 and #855 (Day 1 and Day 2 campaigns) ─────────────────────────
+    print("\n=== INCIDENTS #803 AND #855 (current campaign IDs) ===")
+    for iid in [803, 855]:
         row = s.execute(text(
             "SELECT id, status, priority, hosts, first_seen, last_seen, raw_alert_count "
             "FROM incidents WHERE id = :id"

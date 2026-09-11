@@ -293,13 +293,13 @@ def evaluate_accuracy(session: Session | None = None) -> dict[str, Any]:
         precision = round(total_recovered_count / len(recovered_dict), 4) if recovered_dict else 0.0
         recall = round(recovered_unique_gt_count / executed_count, 4) if executed_count else 0.0
 
-        # 8. Pipeline time to narrative for largest incident (#402)
+        # 8. Pipeline time to narrative for largest incident (#803)
         q_latency = text("""
             SELECT (detail->>'latency_ms')::int / 1000.0
             FROM audit_chain
             WHERE action = 'anthropic_api_call' 
               AND detail->>'task' = 'narrative' 
-              AND (detail->>'incident_id')::int = 402
+              AND (detail->>'incident_id')::int = 803
             ORDER BY id DESC LIMIT 1
         """)
         narr_sec = float(session.execute(q_latency).scalar() or 38.0)

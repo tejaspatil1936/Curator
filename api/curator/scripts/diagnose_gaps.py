@@ -5,10 +5,10 @@ from curator.attack.retrieve import retrieve
 db = SessionLocal()
 
 items = [
-    ('T1021.006 WinRM', 455, 37),
+    ('T1021.006 WinRM', 855, 37),
     ('T1105 Ingress Tool Transfer', 504, 1),
-    ('T1543.003 Windows Service', 402, 18),
-    ('T1074 Data Staged', 455, 26),
+    ('T1543.003 Windows Service', 803, 18),
+    ('T1074 Data Staged', 855, 26),
     ('T1136 Create Account', 524, 14),
 ]
 

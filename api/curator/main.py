@@ -70,10 +70,40 @@ def audit_verify() -> ChainStatus:
 
 @app.post("/pipeline/run")
 def trigger_pipeline(session: Session = Depends(db.get_session)) -> dict:
-    """Trigger execution of the deterministic pipeline."""
+    """Re-run detection and correlation in safe mode.
+
+    Preserves all existing incidents and narrative_sentences. Alerts are
+    recomputed from raw events; incidents and narratives are never deleted.
+    This is the routine route for re-applying rule changes. Incident IDs
+    remain stable across calls.
+    """
     from curator.pipeline.runner import run_pipeline
 
-    return run_pipeline(session)
+    return run_pipeline(session, rebuild=False)
+
+
+@app.post("/pipeline/rebuild")
+def rebuild_pipeline(
+    force: bool = False,
+    session: Session = Depends(db.get_session),
+) -> dict:
+    """Destructive rebuild: clear ALL incidents, alerts, and entity graph.
+
+    WARNING: incident IDs change on every rebuild, orphaning any existing
+    narrative_sentences. This endpoint REFUSES with HTTP 409 if
+    narrative_sentences is non-empty unless ?force=true is passed.
+
+    Use only when you intentionally want a clean slate (e.g. after seeding
+    a completely new dataset). After generating narratives, use /pipeline/run
+    instead.
+    """
+    from curator.pipeline.runner import run_pipeline
+
+    try:
+        return run_pipeline(session, rebuild=True, force=force)
+    except RuntimeError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/incidents")

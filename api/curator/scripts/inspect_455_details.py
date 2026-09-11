@@ -9,11 +9,11 @@ rows = db.execute(text("""
            e.ocsf->'unmapped'->>'ShareName' as share_name
     FROM alerts a
     JOIN events e ON a.event_id = e.id
-    WHERE a.incident_id = 455
+    WHERE a.incident_id = 855
     ORDER BY e.ts ASC
 """)).fetchall()
 
-print(f"Incident 455 has {len(rows)} alerts.")
+print(f"Incident 855 has {len(rows)} alerts.")
 by_rule_events = {}
 for r in rows:
     by_rule_events.setdefault(r.rule_id, []).append(r)

@@ -8,7 +8,7 @@ Generates structured counter-analysis for an incident:
 - reasoning: brief explanation of the counter-argument
 
 In DRY_RUN mode (credentials absent / dry_run=True), returns the
-grounded fixture for incident #402 so the UI can be exercised immediately.
+grounded fixture for incident #803 so the UI can be exercised immediately.
 
 The proposed_query translation layer (query_filters_to_sql) converts the
 structured filter object into a parameterised SQLAlchemy query — this is
@@ -181,7 +181,7 @@ def run_proposed_query(
 
 
 # ---------------------------------------------------------------------------
-# DRY_RUN fixture — grounded on incident #402 (APT29 Day 1)
+# DRY_RUN fixture — grounded on incident #803 (APT29 Day 1)
 # ---------------------------------------------------------------------------
 
 _DRY_RUN_FIXTURE: dict[str, Any] = {
