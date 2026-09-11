@@ -128,7 +128,7 @@ def generate_incident_narrative(
         model=MODEL_SONNET,
         system_blocks=system_blocks,
         user_blocks=user_blocks,
-        max_tokens=2048,
+        max_tokens=4096,
         session=session,
         incident_id=incident_id,
         task_name="narrative",
@@ -156,6 +156,7 @@ def generate_incident_narrative(
     # 5. Strict Python Validation of Evidence Event IDs
     dropped_ids_count = 0
     total_ids_count = 0
+    dropped_details: list[dict[str, Any]] = []
     validated_sentences: list[dict[str, Any]] = []
 
     for item in sentences_raw:
@@ -164,17 +165,25 @@ def generate_incident_narrative(
         claimed_ids = item.get("evidence_event_ids") or []
 
         valid_ids: list[int] = []
+        sentence_dropped: list[int] = []
         for eid in claimed_ids:
             total_ids_count += 1
             if eid in all_valid_event_ids:
                 valid_ids.append(int(eid))
             else:
                 dropped_ids_count += 1
+                sentence_dropped.append(eid)
                 logger.warning(
                     "Incident #%d dropped invalid hallucinated evidence ID %s (not in incident events)",
                     incident_id,
                     eid,
                 )
+        if sentence_dropped:
+            dropped_details.append({
+                "seq": seq,
+                "text": text_content[:60],
+                "invalid_ids": sentence_dropped,
+            })
 
         validated_sentences.append({
             "seq": seq,
@@ -234,6 +243,7 @@ def generate_incident_narrative(
         "title": title,
         "sentences": validated_sentences,
         "dropped_ids_count": dropped_ids_count,
+        "dropped_details": dropped_details,
         "total_claimed_ids": total_ids_count,
         "valid_ids_count": total_ids_count - dropped_ids_count,
         "mean_evidence_ids_per_sentence": mean_ev_ids,

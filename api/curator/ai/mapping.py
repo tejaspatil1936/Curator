@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from sqlalchemy import text
@@ -22,6 +23,55 @@ from curator.attack.retrieve import Candidate, retrieve
 from curator.config import MODEL_SONNET
 
 logger = logging.getLogger(__name__)
+
+# Protocol translations for network ports
+_PORT_TRANSLATIONS: dict[int, str] = {
+    80: "HTTP web protocols web traffic application layer",
+    8080: "HTTP web protocols web traffic application layer",
+    8000: "HTTP web protocols web traffic application layer",
+    443: "HTTPS TLS HTTP web protocols web traffic application layer communication",
+    8443: "HTTPS TLS HTTP web protocols web traffic application layer communication",
+    53: "DNS",
+    445: "SMB Windows admin shares file sharing",
+    5985: "WinRM remote management remote services",
+    5986: "WinRM remote management remote services",
+    3389: "RDP remote desktop remote services",
+    135: "RPC DCOM",
+    88: "Kerberos",
+    464: "Kerberos",
+    389: "LDAP directory",
+    636: "LDAP directory",
+}
+
+# Behaviour translations for EventCodes (Sysmon and Windows Security)
+_EVENT_CODE_TRANSLATIONS: dict[str, str] = {
+    "1": "process creation execution",
+    "3": "network connection",
+    "10": "process access memory credential",
+    "11": "file creation",
+    "12": "registry modification",
+    "13": "registry modification",
+    "4688": "process creation",
+    "4697": "service installation persistence",
+    "7045": "service installation persistence",
+    "4698": "scheduled task persistence",
+    "5140": "network share access",
+    "5145": "network share access",
+    "4104": "script block PowerShell execution",
+}
+
+_HOSTS_RE = re.compile(r"\b(SCRANTON|NEWYORK|NASHUA|UTICA)(?:\.dmevals\.local)?\b", re.IGNORECASE)
+_DOMAIN_RE = re.compile(r"\b[\w\.-]+\.dmevals\.local\b", re.IGNORECASE)
+_IP_RE = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b")
+_TIME_RE = re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b")
+
+
+def _clean_query_text(txt: str) -> str:
+    txt = _HOSTS_RE.sub("", txt)
+    txt = _DOMAIN_RE.sub("", txt)
+    txt = _IP_RE.sub("", txt)
+    txt = _TIME_RE.sub("", txt)
+    return " ".join(txt.split())
 
 _MAPPING_SYSTEM_PROMPT = """You are a MITRE ATT&CK expert mapping incident narrative sentences to specific techniques.
 For each sentence, you are provided a strict whitelist of retrieved candidate ATT&CK techniques with their names and descriptions.
@@ -93,15 +143,38 @@ def map_incident_techniques(
             """)
             ctx_rows = session.execute(q_ctx, {"eids": eids}).fetchall()
             for cr in ctx_rows:
-                if cr[0]: context_terms.append(str(cr[0]))
-                if cr[1]: context_terms.append(str(cr[1]))
-                if cr[2]: context_terms.append(str(cr[2]))
-                if cr[3]: context_terms.append(str(cr[3]))
-                if cr[4]: context_terms.append(f"port {cr[4]}")
-                if cr[5]: context_terms.append(f"event {cr[5]}")
-                if cr[6]: context_terms.append(f"share {cr[6]}")
+                p_name = cr[0]
+                cmd = cr[1]
+                f_path = cr[2]
+                raw_p = cr[4]
+                e_code = str(cr[5]) if cr[5] is not None else None
+                share = cr[6]
 
-        enriched_query = f"{txt} {' '.join(context_terms[:15])}".strip()
+                if p_name:
+                    context_terms.append(_clean_query_text(str(p_name)))
+                if cmd:
+                    context_terms.append(_clean_query_text(str(cmd)[:120]))
+                if f_path:
+                    context_terms.append(_clean_query_text(str(f_path)))
+                if share:
+                    context_terms.append(_clean_query_text(str(share)))
+
+                # Port to protocol term translation
+                p_val = int(raw_p) if raw_p and str(raw_p).isdigit() else None
+                if p_val:
+                    if p_val in _PORT_TRANSLATIONS:
+                        context_terms.append(_PORT_TRANSLATIONS[p_val])
+                    elif 49152 <= p_val <= 65535:
+                        context_terms.append("RPC DCOM")
+
+                # Event code to behavior term translation
+                if e_code and e_code in _EVENT_CODE_TRANSLATIONS:
+                    context_terms.append(_EVENT_CODE_TRANSLATIONS[e_code])
+
+        cleaned_txt = _clean_query_text(txt)
+        # Deduplicate terms while preserving order
+        unique_context = list(dict.fromkeys(context_terms))
+        enriched_query = f"{cleaned_txt} {' '.join(unique_context[:20])}".strip()
 
         # Hybrid retrieval over pgvector embeddings & keyword search (k=20)
         cands = retrieve(enriched_query, k=k_candidates, conn=session.connection())

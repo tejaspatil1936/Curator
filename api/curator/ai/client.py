@@ -96,6 +96,7 @@ def call_claude(
             kwargs: dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
+                "thinking": {"type": "disabled"},
                 "messages": [{"role": "user", "content": user_blocks}],
             }
             if system_blocks:
