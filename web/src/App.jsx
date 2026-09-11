@@ -9,6 +9,7 @@ import {
 import IncidentList from './components/IncidentList.jsx'
 import Narrative from './components/Narrative.jsx'
 import EvidencePanel from './components/EvidencePanel.jsx'
+import Scoreboard from './components/Scoreboard.jsx'
 
 export default function App() {
   const [incidents, setIncidents] = useState([])
@@ -256,12 +257,7 @@ export default function App() {
                   )}
 
                   {activeTab === 'accuracy' && (
-                    <div className="py-8 text-ink-secondary text-ui">
-                      <p className="font-semibold text-ink mb-2">Evaluation Accuracy Ground Truth</p>
-                      <p className="text-small text-ink-muted">
-                        Available in Step 6 accuracy verification harness.
-                      </p>
-                    </div>
+                    <Scoreboard incidentId={selectedIncidentId} />
                   )}
                 </div>
               </>

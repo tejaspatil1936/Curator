@@ -41,3 +41,11 @@ export async function generateNarrative(id, { signal } = {}) {
   return res.json()
 }
 
+export async function getAccuracy(incidentId, { signal } = {}) {
+  const url = incidentId ? `${API_URL}/incidents/${incidentId}/accuracy` : `${API_URL}/accuracy`
+  const res = await fetch(url, { signal })
+  if (!res.ok) throw new Error(`GET /accuracy returned ${res.status}`)
+  return res.json()
+}
+
+

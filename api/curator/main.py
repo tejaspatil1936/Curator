@@ -357,3 +357,22 @@ def generate_narrative_endpoint(
     }
 
 
+@app.get("/accuracy")
+def get_accuracy(session: Session = Depends(db.get_session)) -> dict:
+    """Accuracy reveal harness endpoint (system_design.md §8, §10 & Step 6d)."""
+    from curator.eval.harness import evaluate_accuracy
+
+    return evaluate_accuracy(session)
+
+
+@app.get("/incidents/{incident_id}/accuracy")
+def get_incident_accuracy(
+    incident_id: int, session: Session = Depends(db.get_session)
+) -> dict:
+    """Accuracy reveal harness endpoint for a specific incident or global (system_design.md §8)."""
+    from curator.eval.harness import evaluate_accuracy
+
+    return evaluate_accuracy(session)
+
+
+

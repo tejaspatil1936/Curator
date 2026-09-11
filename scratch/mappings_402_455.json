@@ -1,0 +1,276 @@
+{
+  "402": [
+    {
+      "seq": 1,
+      "technique_id": "T1036.002",
+      "confidence": 0.95
+    },
+    {
+      "seq": 2,
+      "technique_id": "T1036.002",
+      "confidence": 0.6
+    },
+    {
+      "seq": 3,
+      "technique_id": "T1112",
+      "confidence": 0.85
+    },
+    {
+      "seq": 4,
+      "technique_id": "T1071.001",
+      "confidence": 0.5
+    },
+    {
+      "seq": 5,
+      "technique_id": "T1036.002",
+      "confidence": 0.55
+    },
+    {
+      "seq": 6,
+      "technique_id": "T1059.003",
+      "confidence": 0.7
+    },
+    {
+      "seq": 7,
+      "technique_id": "T1059.001",
+      "confidence": 0.9
+    },
+    {
+      "seq": 8,
+      "technique_id": "T1071.001",
+      "confidence": 0.85
+    },
+    {
+      "seq": 9,
+      "technique_id": "T1036.009",
+      "confidence": 0.4
+    },
+    {
+      "seq": 10,
+      "technique_id": "T1070.004",
+      "confidence": 0.92
+    },
+    {
+      "seq": 11,
+      "technique_id": "T1003.001",
+      "confidence": 0.75
+    },
+    {
+      "seq": 12,
+      "technique_id": "T1543.003",
+      "confidence": 0.92
+    },
+    {
+      "seq": 13,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 14,
+      "technique_id": "T1071.001",
+      "confidence": 0.85
+    },
+    {
+      "seq": 15,
+      "technique_id": "T1021.006",
+      "confidence": 0.9
+    },
+    {
+      "seq": 16,
+      "technique_id": "T1021.002",
+      "confidence": 0.9
+    },
+    {
+      "seq": 17,
+      "technique_id": "T1021.002",
+      "confidence": 0.9
+    },
+    {
+      "seq": 18,
+      "technique_id": "T1569.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 19,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 20,
+      "technique_id": "T1569.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 21,
+      "technique_id": "T1021.002",
+      "confidence": 0.8
+    },
+    {
+      "seq": 22,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 23,
+      "technique_id": "T1027.010",
+      "confidence": 0.9
+    },
+    {
+      "seq": 24,
+      "technique_id": "T1071.001",
+      "confidence": 0.85
+    }
+  ],
+  "455": [
+    {
+      "seq": 1,
+      "technique_id": "T1053.005",
+      "confidence": 0.85
+    },
+    {
+      "seq": 2,
+      "technique_id": "T1021.002",
+      "confidence": 0.9
+    },
+    {
+      "seq": 3,
+      "technique_id": "T1027.010",
+      "confidence": 0.85
+    },
+    {
+      "seq": 4,
+      "technique_id": "T1059.001",
+      "confidence": 0.85
+    },
+    {
+      "seq": 5,
+      "technique_id": "T1547.001",
+      "confidence": 0.9
+    },
+    {
+      "seq": 6,
+      "technique_id": "T1071",
+      "confidence": 0.65
+    },
+    {
+      "seq": 7,
+      "technique_id": "T1059.001",
+      "confidence": 0.75
+    },
+    {
+      "seq": 8,
+      "technique_id": "T1071.001",
+      "confidence": 0.8
+    },
+    {
+      "seq": 9,
+      "technique_id": "T1021.002",
+      "confidence": 0.9
+    },
+    {
+      "seq": 10,
+      "technique_id": "T1027",
+      "confidence": 0.7
+    },
+    {
+      "seq": 11,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 12,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 13,
+      "technique_id": "T1548.002",
+      "confidence": 0.9
+    },
+    {
+      "seq": 14,
+      "technique_id": "T1218.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 15,
+      "technique_id": "T1071.001",
+      "confidence": 0.8
+    },
+    {
+      "seq": 16,
+      "technique_id": "T1027",
+      "confidence": 0.65
+    },
+    {
+      "seq": 17,
+      "technique_id": "T1059.001",
+      "confidence": 0.65
+    },
+    {
+      "seq": 18,
+      "technique_id": "T1003.001",
+      "confidence": 0.85
+    },
+    {
+      "seq": 19,
+      "technique_id": "T1059.001",
+      "confidence": 0.8
+    },
+    {
+      "seq": 20,
+      "technique_id": "T1546.003",
+      "confidence": 0.9
+    },
+    {
+      "seq": 21,
+      "technique_id": "T1071.001",
+      "confidence": 0.8
+    },
+    {
+      "seq": 22,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 23,
+      "technique_id": "T1059.001",
+      "confidence": 0.5
+    },
+    {
+      "seq": 24,
+      "technique_id": "T1021.006",
+      "confidence": 0.9
+    },
+    {
+      "seq": 25,
+      "technique_id": "T1071.001",
+      "confidence": 0.8
+    },
+    {
+      "seq": 26,
+      "technique_id": "T1560.001",
+      "confidence": 0.85
+    },
+    {
+      "seq": 27,
+      "technique_id": "T1021.002",
+      "confidence": 0.6
+    },
+    {
+      "seq": 28,
+      "technique_id": "T1071.001",
+      "confidence": 0.75
+    },
+    {
+      "seq": 29,
+      "technique_id": "T1021.002",
+      "confidence": 0.85
+    },
+    {
+      "seq": 30,
+      "technique_id": "T1027.013",
+      "confidence": 0.7
+    }
+  ]
+}
