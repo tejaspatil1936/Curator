@@ -94,3 +94,6 @@ EVIDENCE_SURROUNDING_SECONDS = 60        # ±60s surrounding alerting processes
 EVIDENCE_MAX_EVENTS = 250                # low hundreds cap for Step 4 model context
 PIPELINE_SCHEDULE_SECONDS = 10
 
+# Incident suppression threshold (3.1c)
+INCIDENT_MIN_ALERTS = 3
+

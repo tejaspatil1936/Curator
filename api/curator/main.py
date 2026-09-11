@@ -77,13 +77,23 @@ def trigger_pipeline(session: Session = Depends(db.get_session)) -> dict:
 
 
 @app.get("/incidents")
-def list_incidents(session: Session = Depends(db.get_session)) -> list[dict]:
-    """List all incidents ordered by priority descending (system_design.md §8)."""
-    q = text("""
+def list_incidents(
+    include_suppressed: bool = False,
+    session: Session = Depends(db.get_session),
+) -> list[dict]:
+    """List surfaced incidents ordered by priority descending, first_seen ascending (system_design.md §8).
+
+    3.1c: Suppressed clusters stay in the database and are reachable by direct ID, but
+    only surface in the ranked list when meeting INCIDENT_MIN_ALERTS or containing high/critical alerts.
+    3.1e: Break priority ties on first_seen ASC.
+    """
+    where_clause = "" if include_suppressed else "WHERE status != 'suppressed'"
+    q = text(f"""
         SELECT id, title, priority, priority_reason, event_count, raw_alert_count,
                first_seen, last_seen, hosts, confidence, status
         FROM incidents
-        ORDER BY priority DESC, id ASC
+        {where_clause}
+        ORDER BY priority DESC, first_seen ASC, id ASC
     """)
     rows = session.execute(q).fetchall()
     return [

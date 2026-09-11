@@ -61,7 +61,16 @@ _DOWNLOAD_CRADLE_RE = re.compile(
     re.IGNORECASE,
 )
 _RUN_KEY_RE = re.compile(r"\\currentversion\\run(once)?", re.IGNORECASE)
-_SUSP_MASKS = {"0x1010", "0x1038", "0x1410", "0x1438", "0x1fffff", "0x1f0fff"}
+_SUSP_MASKS = {
+    "0x1010",
+    "0x1038",
+    "0x1410",
+    "0x1438",
+    "0x143a",
+    "0x1fffff",
+    "0x1f0fff",
+    "0x1f3fff",
+}
 _RECON_BINARIES = {
     "whoami.exe",
     "nltest.exe",
@@ -253,16 +262,27 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # EventIDs: Sysmon 10
     # --------------------------------------------------------------------------
     if eid == "10":
-        target_img = normalize_path(unmapped.get("TargetImage") or "")
+        target_img = normalize_path(
+            (ocsf_proc.get("file") or {}).get("path")
+            or unmapped.get("TargetImage")
+            or ""
+        )
+        actor_img = normalize_path(
+            (parent_proc.get("file") or {}).get("path")
+            or unmapped.get("SourceImage")
+            or ""
+        )
+        actor_name_clean = actor_img.split("\\")[-1].lower() if actor_img else ""
         granted_access = str(unmapped.get("GrantedAccess") or "").lower()
         if target_img and target_img.endswith("lsass.exe"):
-            if granted_access in _SUSP_MASKS or "0x1010" in granted_access:
-                add_alert(
-                    "CUR-005",
-                    "Suspicious LSASS Process Memory Access",
-                    "critical",
-                    ["T1003.001"],
-                )
+            if actor_name_clean not in ("csrss.exe", "wininit.exe"):
+                if granted_access in _SUSP_MASKS or "0x1010" in granted_access:
+                    add_alert(
+                        "CUR-005",
+                        "Suspicious LSASS Process Memory Access",
+                        "critical",
+                        ["T1003.001"],
+                    )
 
     # --------------------------------------------------------------------------
     # Rule CUR-006: Registry Run / RunOnce Key Persistence
@@ -370,21 +390,35 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # EventIDs: Sysmon 3
     # --------------------------------------------------------------------------
     if eid == "3" and dst_ip and not is_ignorable_ip(dst_ip):
-        if proc_name in (
-            "powershell.exe",
-            "cmd.exe",
-            "rundll32.exe",
-            "cscript.exe",
-            "wscript.exe",
-            "certutil.exe",
-            "mshta.exe",
-        ):
-            add_alert(
-                "CUR-013",
-                "Scripting Process Initiated Outbound Network Connection",
-                "medium",
-                ["T1071.001"],
-            )
+        # Exclude RFC1918 internal space (10/8, 172.16/12, 192.168/16) per 3.1b
+        dst_ip_str = str(dst_ip)
+        is_internal_rfc1918 = (
+            dst_ip_str.startswith("10.")
+            or dst_ip_str.startswith("192.168.")
+            or dst_ip_str.startswith("172.16.")
+            or dst_ip_str.startswith("172.17.")
+            or dst_ip_str.startswith("172.18.")
+            or dst_ip_str.startswith("172.19.")
+            or dst_ip_str.startswith("172.2")
+            or dst_ip_str.startswith("172.30.")
+            or dst_ip_str.startswith("172.31.")
+        )
+        if not is_internal_rfc1918:
+            if proc_name in (
+                "powershell.exe",
+                "cmd.exe",
+                "rundll32.exe",
+                "cscript.exe",
+                "wscript.exe",
+                "certutil.exe",
+                "mshta.exe",
+            ):
+                add_alert(
+                    "CUR-013",
+                    "Scripting Process Initiated Outbound Network Connection",
+                    "medium",
+                    ["T1071.001"],
+                )
 
     # --------------------------------------------------------------------------
     # Rule CUR-014: Startup Folder File Creation
@@ -419,7 +453,11 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # EventIDs: Sysmon 7
     # --------------------------------------------------------------------------
     if eid == "7":
-        loaded_mod = normalize_path(unmapped.get("ImageLoaded") or "")
+        loaded_mod = normalize_path(
+            ((ocsf.get("module") or {}).get("file") or {}).get("path")
+            or unmapped.get("ImageLoaded")
+            or ""
+        )
         if loaded_mod and _SUSPICIOUS_PATH_RE.search(loaded_mod):
             add_alert(
                 "CUR-016",
@@ -427,6 +465,7 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
                 "medium",
                 ["T1574"],
             )
+
 
     # --------------------------------------------------------------------------
     # Rule CUR-017: Remote Desktop Interactive Logon

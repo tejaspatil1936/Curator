@@ -30,6 +30,7 @@ from curator.config import (
     CORRELATE_IP_WINDOW_SECONDS,
     CORRELATE_PROCESS_WINDOW_SECONDS,
     CORRELATE_USER_WINDOW_SECONDS,
+    INCIDENT_MIN_ALERTS,
 )
 from curator.db import SessionLocal
 from curator.pipeline.correlate import AlertItem, correlate_alerts
@@ -255,13 +256,25 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
             cluster.alerts, cluster.hosts
         )
 
+        # 3.1c: Suppress noise clusters.
+        # An incident is 'open' (surfaces) if raw_alert_count >= INCIDENT_MIN_ALERTS
+        # OR it contains at least one high or critical alert. Otherwise 'suppressed'.
+        has_high_crit = any(
+            a.severity in ("high", "critical") for a in cluster.alerts
+        )
+        status = (
+            "open"
+            if (cluster.raw_alert_count >= INCIDENT_MIN_ALERTS or has_high_crit)
+            else "suppressed"
+        )
+
         q_create_inc = text("""
             INSERT INTO incidents (
                 first_seen, last_seen, event_count, raw_alert_count,
                 hosts, users, priority, priority_reason, status
             ) VALUES (
                 :first_seen, :last_seen, :event_count, :raw_alert_count,
-                :hosts, :users, :priority, :priority_reason, 'open'
+                :hosts, :users, :priority, :priority_reason, :status
             ) RETURNING id
         """)
         inc_res = session.execute(
@@ -275,6 +288,7 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 "users": cluster.users,
                 "priority": priority_score,
                 "priority_reason": json.dumps(priority_reason),
+                "status": status,
             },
         )
         inc_id = inc_res.scalar_one()
@@ -367,6 +381,7 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                 "id": inc_id,
                 "priority": priority_score,
                 "priority_reason": priority_reason,
+                "status": status,
                 "hosts": cluster.hosts,
                 "users": cluster.users,
                 "raw_alert_count": cluster.raw_alert_count,
@@ -392,13 +407,19 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
 
     session.commit()
 
-    incidents_output.sort(key=lambda i: i["priority"], reverse=True)
+    # 3.1e: Tie-break priority on first_seen ASC so ordering is deterministic
+    incidents_output.sort(key=lambda i: (-i["priority"], i["first_seen"]))
+
+    surfaced_count = sum(1 for i in incidents_output if i["status"] == "open")
+    suppressed_count = sum(1 for i in incidents_output if i["status"] == "suppressed")
 
     summary = {
         "total_alerts_fired": total_alerts_fired,
         "unique_alerts": unique_alert_count,
         "duplicate_alerts": dup_count,
         "incident_count": len(clusters),
+        "surfaced_incidents": surfaced_count,
+        "suppressed_incidents": suppressed_count,
         "rule_counts": dict(rule_counts),
         "incidents": incidents_output,
         "duration_ms": int(
