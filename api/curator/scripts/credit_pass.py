@@ -14,19 +14,21 @@ Resumable: if it fails at incident 12, re-running skips the 11 already done.
 An incident is considered done when narrative_sentences has >= 1 row for it.
 
 Estimated cost before you run:
-  24 open incidents × ~35 sentences each = ~840 sentences to generate
-  Narrative generation:   ~1,200 input tokens + ~400 output tokens per sentence
-                          840 × 1,600 = 1,344,000 tokens
-  ATT&CK mapping:         ~800 tokens per sentence × 840 = 672,000 tokens
-  Sentence verification:  ~600 tokens per sentence × 840 = 504,000 tokens
-  Total:                  ~2,520,000 tokens
-  Claude claude-haiku-4-5 pricing (Jun 2025): $0.80/M in, $4.00/M out
-  Blended estimate:       ~$3–$5 total for this pass.
-  (The original 178-sentence run over 2 incidents cost $8.62 — 24 incidents
-   will cost proportionally more but 22 of the remaining incidents are shorter.)
+  24 open incidents:
+    - 2 multi-host campaigns (#803, #855): ~25-30 sentences each
+    - 22 single-host/component clusters: ~2-9 sentences each (avg ~4)
+    - Total estimated sentences: ~140-160 sentences
+  Per-model rates:
+    - Narrative (Sonnet 5): $3.00/M in, $15.00/M out, $3.75/M cache write, $0.30/M cache read
+    - Mapping (Sonnet 5):   $3.00/M in, $15.00/M out, $3.75/M cache write, $0.30/M cache read
+    - Verification (Haiku): $0.80/M in, $4.00/M out
+  Observed cost from previous run: ~$3.00 for full 20-incident set (~$0.02-$0.04 per small incident,
+  ~$0.65-$0.75 per large campaign).
+  Total estimated cost for 24 incidents: ~$3.20 - $3.70 USD.
 """
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from datetime import UTC, datetime
@@ -43,10 +45,11 @@ from curator.eval.harness import evaluate_accuracy
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _open_incidents(session) -> list[int]:
-    rows = session.execute(text(
-        "SELECT id FROM incidents WHERE status = 'open' ORDER BY priority DESC, id"
-    )).fetchall()
+def _open_incidents(session, limit: int | None = None) -> list[int]:
+    query = "SELECT id FROM incidents WHERE status = 'open' ORDER BY priority DESC, id"
+    if limit is not None and limit > 0:
+        query += f" LIMIT {int(limit)}"
+    rows = session.execute(text(query)).fetchall()
     return [r[0] for r in rows]
 
 
@@ -80,15 +83,27 @@ _PASS_START = datetime.now(UTC)
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Curator credit pass for APT29 evaluation")
+    parser.add_argument(
+        "--limit",
+        "-n",
+        type=int,
+        default=None,
+        help="Limit execution to top N open incidents ordered by priority",
+    )
+    args = parser.parse_args()
+
     print(f"Credit pass started at {_PASS_START.isoformat()}")
+    if args.limit:
+        print(f"Processing top {args.limit} incident(s) by priority")
     print("=" * 70)
 
     with SessionLocal() as session:
-        incident_ids = _open_incidents(session)
+        incident_ids = _open_incidents(session, limit=args.limit)
         print(f"Open incidents: {len(incident_ids)} — {incident_ids}")
 
         if not incident_ids:
-            print("No open incidents. Run the pipeline first.")
+            print("No open incidents matching criteria.")
             sys.exit(1)
 
         # ------------------------------------------------------------------
