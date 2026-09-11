@@ -45,26 +45,99 @@ Respond ONLY with a valid JSON object matching this exact structure:
 }"""
 
 
+def format_forensic_event(ev: dict[str, Any]) -> str:
+    raw = ev.get("raw") or {}
+    ocsf = ev.get("ocsf") or {}
+
+    parts = [f"Event {ev['id']}"]
+    ts_val = ev.get("ts")
+    ts_str = ts_val.isoformat() if hasattr(ts_val, "isoformat") else str(ts_val)
+    parts.append(f"TS={ts_str}")
+
+    host = ev.get("host") or ""
+    if host:
+        parts.append(f"Host={host}")
+
+    user = ev.get("user_name") or raw.get("AccountName") or raw.get("TargetUserName") or ""
+    if user:
+        parts.append(f"User={user}")
+
+    code = ev.get("event_code") or raw.get("EventID") or ""
+    parts.append(f"Code={code}")
+
+    proc = ev.get("process_name") or raw.get("SourceImage") or raw.get("ProcessName") or ""
+    if proc:
+        parts.append(f"Proc={proc}")
+
+    parent = ev.get("parent_process") or raw.get("ParentImage") or ""
+    if parent:
+        parts.append(f"Parent={parent}")
+
+    cmd = ev.get("command_line") or raw.get("CommandLine") or ""
+    if cmd:
+        parts.append(f"Cmd={cmd}")
+
+    # Process Access (Code 10) - Target process and GrantedAccess mask
+    target_img = (
+        raw.get("TargetImage")
+        or (ocsf.get("process") or {}).get("file", {}).get("path")
+        or (ocsf.get("process") or {}).get("name")
+        or ""
+    )
+    if target_img:
+        parts.append(f"TargetProc={target_img}")
+
+    access = raw.get("GrantedAccess") or (ocsf.get("unmapped") or {}).get("GrantedAccess") or ""
+    if access:
+        parts.append(f"GrantedAccess={access}")
+
+    # PowerShell ScriptBlock (Code 4104)
+    script = raw.get("ScriptBlockText")
+    if script:
+        script_clean = " ".join(script.split())[:300]
+        parts.append(f"ScriptBlock={script_clean}")
+
+    # Network details (Code 3 / 1149 / 5140)
+    src_ip = ev.get("src_ip") or raw.get("SourceIp") or ""
+    dst_ip = ev.get("dst_ip") or raw.get("DestinationIp") or ""
+    dst_port = raw.get("DestinationPort") or (ocsf.get("dst_endpoint") or {}).get("port") or ""
+    if src_ip or dst_ip:
+        port_str = f":{dst_port}" if dst_port else ""
+        parts.append(f"Net={src_ip}->{dst_ip}{port_str}")
+
+    # Share access details (Code 5140, 5145)
+    share = raw.get("ShareName") or (ocsf.get("unmapped") or {}).get("ShareName") or ""
+    if share:
+        parts.append(f"Share={share}")
+    share_file = raw.get("RelativeTargetName") or (ocsf.get("unmapped") or {}).get("RelativeTargetName") or ""
+    if share_file:
+        parts.append(f"ShareFile={share_file}")
+
+    # Service installation details (Code 7045, 4697)
+    svc_name = raw.get("ServiceName") or (ocsf.get("unmapped") or {}).get("ServiceName") or ""
+    if svc_name:
+        parts.append(f"Service={svc_name}")
+    svc_img = raw.get("ImagePath") or raw.get("ServiceFileName") or ""
+    if svc_img:
+        parts.append(f"ServiceImage={svc_img}")
+
+    # Registry details (Code 12, 13, 14)
+    reg = raw.get("TargetObject") or (ocsf.get("unmapped") or {}).get("TargetObject") or ""
+    if reg:
+        parts.append(f"RegKey={reg}")
+
+    # File creation / deletion / modification (Code 11, 23, 26)
+    file_tgt = raw.get("TargetFilename") or ev.get("file_path") or ""
+    if file_tgt:
+        parts.append(f"File={file_tgt}")
+
+    return " | ".join(parts)
+
+
 def _format_evidence_events(events: list[dict[str, Any]]) -> str:
     if not events:
         return "None (0 events cited)"
-    lines: list[str] = []
-    for ev in events:
-        cmd = ev.get("command_line") or ""
-        proc = ev.get("process_name") or ""
-        parent = ev.get("parent_process") or ""
-        ts_val = ev.get("ts")
-        ts_str = ts_val.isoformat() if hasattr(ts_val, "isoformat") else str(ts_val)
-        host = ev.get("host") or ""
-        user = ev.get("user_name") or ""
-        code = ev.get("event_code") or ""
-        src_ip = ev.get("src_ip") or ""
-        dst_ip = ev.get("dst_ip") or ""
-        net_str = f" | Net={src_ip}->{dst_ip}" if (src_ip or dst_ip) else ""
-        lines.append(
-            f"- Event {ev['id']}: TS={ts_str} | Host={host} | User={user} | Proc={proc} | Parent={parent} | Cmd={cmd} | Code={code}{net_str}"
-        )
-    return "\n".join(lines)
+    return "\n".join(f"- {format_forensic_event(ev)}" for ev in events)
 
 
 def _fetch_events_by_ids(session: Session, event_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -72,7 +145,7 @@ def _fetch_events_by_ids(session: Session, event_ids: list[int]) -> dict[int, di
         return {}
     q = text("""
         SELECT id, ts, host, user_name, process_name, parent_process,
-               command_line, event_code, src_ip, dst_ip
+               command_line, event_code, src_ip, dst_ip, ocsf, raw
         FROM events
         WHERE id = ANY(:ids)
     """)

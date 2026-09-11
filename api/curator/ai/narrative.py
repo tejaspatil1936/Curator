@@ -28,14 +28,20 @@ Your task is to review the chronological events and security alerts for an incid
 
 STRICT FORENSIC GROUNDING & CITATION RULES:
 1. CITE EVERY SUPPORTING EVENT: Every sentence MUST cite ALL events that support or demonstrate that claim in `evidence_event_ids`. For repeated connections, multiple share accesses, or multi-host activity, cite EVERY relevant event ID from the corpus, NEVER just a single representative ID.
-2. PREFER SPECIFIC OVER SUMMARY: Detail exact concrete values from the telemetry—process names, full command lines, file paths, destination IP addresses, destination ports, and exact timestamps. For example: "PowerShell on SCRANTON connected to 192.168.0.4:443 fourteen times between 03:08:12 and 03:14:40" beats "established C2 beaconing."
-3. EXACT TIMESTAMPS: Always state exact timestamps taken directly from the events (e.g. '02:55:56.151 UTC' or 'between 03:11:40 and 03:15:03 UTC'). Never use rounded, approximate, or estimated time ranges.
+2. PREFER SPECIFIC OVER SUMMARY: Detail exact concrete values from the telemetry—process names, target processes, full command lines, file paths, destination IP addresses, destination ports, share names, registry keys, and exact timestamps. For example: "PowerShell on SCRANTON connected to 192.168.0.4:443 fourteen times between 03:08:12 and 03:14:40" beats "established C2 beaconing."
+3. EXACT TIMESTAMPS: Always state exact timestamps taken directly from the events (e.g. '02:55:56.151 UTC' or 'between 03:11:40 and 03:15:03 UTC'). Never use rounded, approximate, or estimated time ranges, and never write malformed relative offsets like '03:610 seconds later'.
 4. NO IP CHARACTERIZATION: Do not characterize IP addresses as 'internal' or 'external' (e.g. 192.168.x.x, 10.x.x.x)—simply state the exact IP address and port.
 5. ONE STEP PER SENTENCE: Do not merge disparate steps (e.g. discovery, network share access, and lateral movement) into a single high-level line. Break each technical action into its own chronological sentence.
 6. FACTUAL GROUNDING: Describe ONLY actions and facts directly demonstrated by the provided telemetry events. NEVER speculate or extrapolate unobserved steps.
 7. CITATION BOUNDARY: Every ID in `evidence_event_ids` MUST be an exact Event ID from the provided Incident Telemetry Corpus. Never invent or synthesize event IDs.
 8. TARGET LENGTH GUIDANCE: Produce 12–25 sentences for a large incident (many alerts/hosts), and 2–5 sentences for a small incident.
-9. Output format MUST be pure JSON conforming to:
+
+EXPLICIT PROHIBITIONS (MANDATORY):
+- NO NEGATIVE CORPUS CLAIMS: NEVER state negative claims about the broader corpus (e.g. NEVER write "No further corroborating events are present in the corpus", "No additional telemetry was observed"). Describe ONLY the positive activity actually captured in the events.
+- NO INTENT OR TRADECRAFT ASSERTIONS: Do NOT speculate on intent or attribute tradecraft (e.g. NEVER write "consistent with known tradecraft for lateral movement", "indicating preparation for account manipulation", "likely for defense evasion", "consistent with credential-dumping activity"). State the raw technical action that occurred, not its supposed strategic motivation or tradecraft alignment.
+- NO ALERT METADATA CLAIMS: Do NOT cite internal alert rule identifiers, severities, or detection reasons (e.g. NEVER write "triggered critical alert CUR-005", "high-severity alert", "logged with reason 'alerting'"). Rule IDs and severities are Curator's own labels, not facts in the telemetry. The model should describe the observed behaviour (e.g. "Process X accessed memory of lsass.exe"), never the alert that fired on it.
+
+Output format MUST be pure JSON conforming to:
 {
   "title": "<Concise executive title describing the incident narrative>",
   "sentences": [
@@ -84,18 +90,14 @@ def generate_incident_narrative(
 
     # 3. Format event corpus for model with prompt caching blocks
     # Cacheable corpus block
+    from curator.ai.verify import format_forensic_event
+
     corpus_lines: list[str] = [
         f"Incident #{incident_id} Telemetry Corpus ({len(evidence_events)} events):"
     ]
     for ev in evidence_events:
         reason = ev.get("evidence_selection_reason", "context")
-        cmd = ev.get("command_line") or ""
-        proc = ev.get("process_name") or ""
-        ts_str = ev["ts"].isoformat() if hasattr(ev["ts"], "isoformat") else str(ev["ts"])
-        corpus_lines.append(
-            f"- Event ID={ev['id']} | TS={ts_str} | Host={ev.get('host')} | "
-            f"User={ev.get('user_name')} | Proc={proc} | Cmd={cmd} | Reason={reason} | Code={ev.get('event_code')}"
-        )
+        corpus_lines.append(f"- {format_forensic_event(ev)} | Reason={reason}")
     corpus_text = "\n".join(corpus_lines)
 
     # Alerts summary block
