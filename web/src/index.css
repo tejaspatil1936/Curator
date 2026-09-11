@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* DESIGN.md §3 tokens — the single source of truth. tailwind.config.js maps onto these. */
+:root {
+  /* surfaces */
+  --canvas:        #F7F8FA;   /* app background — cool, not cream */
+  --paper:         #FFFFFF;   /* content surfaces */
+  --paper-sunk:    #F2F4F7;   /* inset areas, code blocks, table headers */
+
+  /* ink */
+  --ink:           #1A1D23;   /* primary text */
+  --ink-secondary: #4B5563;   /* supporting text */
+  --ink-muted:     #6B7280;   /* labels, metadata */
+  --ink-faint:     #9CA3AF;   /* disabled, placeholder */
+
+  /* structure */
+  --rule:          #E3E6EB;   /* hairline borders — the main structural device */
+  --rule-strong:   #CDD2DA;   /* emphasis borders, focused inputs */
+
+  /* primary action — deep institutional blue */
+  --primary:       #26408B;
+  --primary-hover: #1D3170;
+  --primary-wash:  #EDF1FA;
+
+  /* evidence — used NOWHERE else */
+  --evidence:      #FDE68A;   /* the highlight wash */
+  --evidence-edge: #D9A521;   /* left marker on a highlighted row */
+
+  /* severity — deliberately muted */
+  --sev-critical:  #B42318;
+  --sev-high:      #B54708;
+  --sev-medium:    #854D0E;
+  --sev-low:       #6B7280;
+  --sev-wash-crit: #FEF3F2;
+  --sev-wash-high: #FFFAEB;
+
+  /* verification */
+  --unsupported:   #B42318;
+  --verified:      #067647;
+
+  /* §3.3 shape */
+  --radius-sm: 3px;   /* badges, inputs */
+  --radius:    5px;   /* panels, cards */
+  --radius-lg: 8px;   /* drawer, modal */
+
+  --shadow-drawer: -8px 0 24px rgba(16, 24, 40, 0.06);  /* evidence drawer only */
+  --shadow-pop:    0 4px 12px rgba(16, 24, 40, 0.08);   /* dropdowns, tooltips */
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ui text-ink antialiased;
+  }
+
+  /* DESIGN.md §8: visible on every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+}
