@@ -1,0 +1,101 @@
+name: curator
+
+services:
+  curator-db:
+    image: pgvector/pgvector:pg16
+    # Only the Postgres variables, never the whole of api/.env (it holds ANTHROPIC_API_KEY).
+    # Compose interpolates them from ./.env, a symlink to api/.env that `make up` creates.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?not set - run make up once to create api/.env and the ./.env link}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?not set - run make up once to create api/.env and the ./.env link}
+      POSTGRES_DB: ${POSTGRES_DB:?not set - run make up once to create api/.env and the ./.env link}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 matters: during first boot the entrypoint runs db/init against a
+      # temporary server that listens on the unix socket only, so a TCP check stays
+      # unhealthy until 001_schema.sql has finished and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # No host port: use `make psql`. Kali's own Postgres (msfdb) often holds 5432.
+    networks: [default, offline]
+
+  curator-api:
+    build: ./api
+    image: curator-api:dev
+    env_file: ./api/.env
+    # The image's default CMD has no --reload; dev adds it here.
+    command: uvicorn curator.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/curator
+    volumes:
+      - ./api:/app
+      - ./datasets:/datasets
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      curator-db:
+        condition: service_healthy
+    # Lets `make up` (--wait) return only once uvicorn is serving. Checks the API
+    # process, not the DB: /health answers 200 with "db": false when Postgres is down.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+
+  curator-web:
+    build: ./web
+    init: true
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./web:/app
+      # Keeps the image's node_modules visible under the bind mount.
+      # `make up` passes --renew-anon-volumes so it is rebuilt when package.json changes.
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+
+  # `make seed-offline`: the same loaders on a network with no route out, proving the
+  # embedding model and datasets are local and nothing is downloaded at runtime.
+  curator-seed-offline:
+    profiles: ["offline"]
+    image: curator-api:dev
+    pull_policy: never
+    env_file: ./api/.env
+    volumes:
+      - ./api:/app
+      - ./datasets:/datasets
+    networks: [offline]
+    depends_on:
+      curator-db:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        if python -c "import socket; socket.create_connection(('1.1.1.1', 443), timeout=3)" 2>/dev/null; then
+          echo "offline check FAILED: this container can reach the internet"; exit 1
+        fi
+        echo "offline check: no route to the internet"
+        python -m curator.attack.load_attack && python -m curator.ingest.seed apt29
+
+networks:
+  default: {}
+  offline:
+    internal: true
+
+volumes:
+  pgdata:

@@ -1,0 +1,23 @@
+# Secrets (./.env is a symlink to api/.env that `make up` creates)
+api/.env
+.env
+
+# Datasets are downloaded, never committed; the verified schema notes are
+datasets/*
+!datasets/SCHEMA_NOTES.md
+
+# Node
+node_modules/
+web/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
