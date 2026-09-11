@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from curator.config import DC_SERVICE_PORTS
 from curator.ingest.normalize import (
     is_ignorable_ip,
     is_machine_account,
@@ -21,6 +22,7 @@ from curator.ingest.normalize import (
     normalize_process_uid,
     normalize_user,
 )
+
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,7 @@ class AlertCandidate:
     process_uid: str | None
     command_line: str | None = None
     is_planted: bool = False
+    detail: dict[str, Any] | None = None
 
 
 # Precompiled regular expressions for high-throughput rule evaluation
@@ -161,11 +164,21 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
 
     src_ip = event.get("src_ip") or (ocsf.get("src_endpoint") or {}).get("ip")
     dst_ip = event.get("dst_ip") or (ocsf.get("dst_endpoint") or {}).get("ip")
+    raw_dst_port = (
+        (ocsf.get("dst_endpoint") or {}).get("port")
+        or unmapped.get("DestinationPort")
+    )
+    dst_port = int(raw_dst_port) if raw_dst_port and str(raw_dst_port).isdigit() else None
+
 
     alerts: list[AlertCandidate] = []
 
     def add_alert(
-        rule_id: str, rule_name: str, severity: str, technique_ids: list[str]
+        rule_id: str,
+        rule_name: str,
+        severity: str,
+        technique_ids: list[str],
+        detail: dict[str, Any] | None = None,
     ) -> None:
         alerts.append(
             AlertCandidate(
@@ -180,8 +193,10 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
                 process_uid=proc_uid,
                 command_line=cmd_line,
                 is_planted=is_planted,
+                detail=detail,
             )
         )
+
 
     # --------------------------------------------------------------------------
     # Rule CUR-001: Office Application Spawning Script Interpreter / Shell
@@ -390,20 +405,9 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # EventIDs: Sysmon 3
     # --------------------------------------------------------------------------
     if eid == "3" and dst_ip and not is_ignorable_ip(dst_ip):
-        # Exclude RFC1918 internal space (10/8, 172.16/12, 192.168/16) per 3.1b
-        dst_ip_str = str(dst_ip)
-        is_internal_rfc1918 = (
-            dst_ip_str.startswith("10.")
-            or dst_ip_str.startswith("192.168.")
-            or dst_ip_str.startswith("172.16.")
-            or dst_ip_str.startswith("172.17.")
-            or dst_ip_str.startswith("172.18.")
-            or dst_ip_str.startswith("172.19.")
-            or dst_ip_str.startswith("172.2")
-            or dst_ip_str.startswith("172.30.")
-            or dst_ip_str.startswith("172.31.")
-        )
-        if not is_internal_rfc1918:
+        # Exclude DC on expected service ports (53, 88, 135, 389, 445) per 3.2a
+        is_dc_service_port = dst_port in DC_SERVICE_PORTS
+        if not is_dc_service_port:
             if proc_name in (
                 "powershell.exe",
                 "cmd.exe",
@@ -419,6 +423,7 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
                     "medium",
                     ["T1071.001"],
                 )
+
 
     # --------------------------------------------------------------------------
     # Rule CUR-014: Startup Folder File Creation

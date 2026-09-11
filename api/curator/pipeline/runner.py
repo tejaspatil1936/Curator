@@ -15,16 +15,19 @@ Idempotent and safe for scheduled execution.
 
 from __future__ import annotations
 
+import json
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from typing import Any
+
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from curator import audit
 from curator.config import (
+    BEACON_BUCKET_SECONDS,
     CORRELATE_FILE_WINDOW_SECONDS,
     CORRELATE_HOST_WINDOW_SECONDS,
     CORRELATE_IP_WINDOW_SECONDS,
@@ -99,15 +102,13 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
         ORDER BY ts ASC, id ASC
     """).execution_options(yield_per=10000)
 
-    all_alerts: list[dict[str, Any]] = []
-    rule_counts: Counter[str] = Counter()
+    raw_alerts: list[dict[str, Any]] = []
 
     for r in session.execute(q_events, {"codes": CANDIDATE_EVENT_CODES}):
         ev = dict(r._mapping)
         cand_alerts = evaluate_event(ev)
         for c in cand_alerts:
-            rule_counts[c.rule_id] += 1
-            all_alerts.append(
+            raw_alerts.append(
                 {
                     "event_id": c.event_id,
                     "rule_id": c.rule_id,
@@ -120,14 +121,85 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
                     "process_uid": c.process_uid,
                     "command_line": c.command_line,
                     "is_planted": c.is_planted,
+                    "detail": c.detail,
+                    "dst_ip": str(ev.get("dst_ip") or ""),
+                    "dst_port": (ev.get("ocsf") or {}).get("dst_endpoint", {}).get("port"),
                 }
             )
 
+    # 3.2a: Session aggregation for CUR-013 (BEACON_BUCKET_SECONDS = 300)
+    # Collapse Sysmon 3 connections into sessions keyed on (host, process_uid, dst_ip, dst_port)
+    cur013_alerts = [a for a in raw_alerts if a["rule_id"] == "CUR-013"]
+    other_alerts = [a for a in raw_alerts if a["rule_id"] != "CUR-013"]
+
+    cur013_sessions: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    for a in cur013_alerts:
+        b_id = int(a["ts"].timestamp() // BEACON_BUCKET_SECONDS)
+        key = (a["host"], a["process_uid"], a["dst_ip"], a["dst_port"], b_id)
+        cur013_sessions[key].append(a)
+
+    aggregated_cur013: list[dict[str, Any]] = []
+    for key, items in cur013_sessions.items():
+        items.sort(key=lambda x: x["ts"])
+        conn_count = len(items)
+        first_s = items[0]["ts"]
+        last_s = items[-1]["ts"]
+
+        # Calculate inter-arrival gaps
+        if conn_count > 1:
+            gaps = [
+                (items[i + 1]["ts"] - items[i]["ts"]).total_seconds()
+                for i in range(conn_count - 1)
+            ]
+            mean_gap = sum(gaps) / len(gaps)
+            # Regularity metric: standard deviation of gaps
+            variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
+            std_gap = variance ** 0.5
+            is_regular = std_gap < (mean_gap * 0.5 + 2.0)
+        else:
+            mean_gap = 0.0
+            is_regular = False
+
+        # Raise severity to high where connection count is high and inter-arrival timing is regular
+        severity = "high" if (conn_count >= 10 and is_regular) or conn_count >= 20 else "medium"
+
+        rep = items[0]
+        detail = {
+            "connection_count": conn_count,
+            "first_seen": first_s.isoformat(),
+            "last_seen": last_s.isoformat(),
+            "mean_gap_seconds": round(mean_gap, 2),
+            "is_beaconing": bool(conn_count >= 10 and is_regular),
+            "dst_ip": rep["dst_ip"],
+            "dst_port": rep["dst_port"],
+        }
+        aggregated_cur013.append(
+            {
+                "event_id": rep["event_id"],
+                "rule_id": "CUR-013",
+                "rule_name": "Scripting Process Initiated Outbound Network Connection",
+                "severity": severity,
+                "technique_ids": rep["technique_ids"],
+                "ts": rep["ts"],
+                "host": rep["host"],
+                "user_norm": rep["user_norm"],
+                "process_uid": rep["process_uid"],
+                "command_line": rep["command_line"],
+                "is_planted": rep["is_planted"],
+                "detail": detail,
+            }
+        )
+
+    all_alerts: list[dict[str, Any]] = other_alerts + aggregated_cur013
+    all_alerts.sort(key=lambda x: (x["ts"], x["rule_id"]))
+
+    rule_counts: Counter[str] = Counter(a["rule_id"] for a in all_alerts)
     total_alerts_fired = len(all_alerts)
     logger.info(
-        "Detection complete: %d alerts fired across %d rules",
+        "Detection complete: %d alerts fired across %d rules (CUR-013 aggregated to %d sessions)",
         total_alerts_fired,
         len(rule_counts),
+        len(aggregated_cur013),
     )
 
     # Clean up old alerts & incidents for fresh idempotent pipeline run
@@ -141,14 +213,30 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
         q_insert_alert = text("""
             INSERT INTO alerts (
                 event_id, rule_id, rule_name, severity, technique_ids,
-                ts, host, user_norm, process_uid, is_planted
+                ts, host, user_norm, process_uid, is_planted, detail
             ) VALUES (
                 :event_id, :rule_id, :rule_name, :severity, :technique_ids,
-                :ts, :host, :user_norm, :process_uid, :is_planted
+                :ts, :host, :user_norm, :process_uid, :is_planted, :detail
             ) RETURNING id
         """)
         for a in all_alerts:
-            a["id"] = session.execute(q_insert_alert, a).scalar_one()
+            a["id"] = session.execute(
+                q_insert_alert,
+                {
+                    "event_id": a["event_id"],
+                    "rule_id": a["rule_id"],
+                    "rule_name": a["rule_name"],
+                    "severity": a["severity"],
+                    "technique_ids": a["technique_ids"],
+                    "ts": a["ts"],
+                    "host": a["host"],
+                    "user_norm": a["user_norm"],
+                    "process_uid": a["process_uid"],
+                    "is_planted": a["is_planted"],
+                    "detail": json.dumps(a.get("detail")) if a.get("detail") else None,
+                },
+            ).scalar_one()
+
 
     # --------------------------------------------------------------------------
     # Stage 3: Deduplication

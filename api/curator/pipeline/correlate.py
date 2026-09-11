@@ -24,7 +24,11 @@ from curator.config import (
     CORRELATE_PROCESS_WINDOW_SECONDS,
     CORRELATE_USER_WINDOW_SECONDS,
 )
-from curator.ingest.normalize import is_ignorable_ip, is_machine_account
+from curator.ingest.normalize import (
+    is_correlating_user,
+    is_ignorable_ip,
+    is_machine_account,
+)
 
 
 class DisjointSet:
@@ -144,12 +148,12 @@ def correlate_alerts(
             ):
                 matched = True
 
-            # 2. Same normalized user (excluding machine accounts)
+            # 2. Same normalized user (excluding machine and service accounts per 3.2c)
             elif (
                 a.user_norm
                 and b.user_norm
                 and a.user_norm == b.user_norm
-                and not is_machine_account(a.user_norm)
+                and is_correlating_user(a.user_norm)
                 and dt <= user_window_s
             ):
                 matched = True

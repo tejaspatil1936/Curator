@@ -46,6 +46,30 @@ def is_machine_account(user: str | None) -> bool:
     return bool(norm and norm.endswith("$"))
 
 
+def is_correlating_user(user: str | None) -> bool:
+    """Check if a user account can be used as a correlation join key (3.2c).
+
+    Excludes built-in service accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE,
+    ANONYMOUS LOGON), machine accounts (ending with $), and DWM/UMFD session accounts.
+    """
+    norm = normalize_user(user)
+    if not norm or norm == "-":
+        return False
+    if norm.endswith("$"):
+        return False
+    if norm.startswith("dwm-") or norm.startswith("umfd-") or norm.startswith("font driver host\\"):
+        return False
+    from curator.config import NON_CORRELATING_USERS
+
+    if norm in NON_CORRELATING_USERS:
+        return False
+    # Check without domain prefix or variations
+    clean = norm.split("\\")[-1]
+    if clean in ("system", "network service", "local service", "anonymous logon"):
+        return False
+    return True
+
+
 def normalize_host(hostname: str | None) -> str | None:
     """Normalize endpoint host from Hostname (never the collector host).
 

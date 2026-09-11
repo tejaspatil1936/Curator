@@ -97,3 +97,21 @@ PIPELINE_SCHEDULE_SECONDS = 10
 # Incident suppression threshold (3.1c)
 INCIDENT_MIN_ALERTS = 3
 
+# 3.2a: Beacon aggregation bucket and DC service ports
+BEACON_BUCKET_SECONDS = 300
+DC_SERVICE_PORTS = frozenset({53, 88, 135, 389, 445})
+
+# 3.2c: Built-in service principals excluded from correlation joins
+NON_CORRELATING_USERS = frozenset(
+    {
+        "system",
+        "nt authority\\system",
+        "network service",
+        "nt authority\\network service",
+        "local service",
+        "nt authority\\local service",
+        "anonymous logon",
+        "nt authority\\anonymous logon",
+    }
+)
+
