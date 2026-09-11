@@ -344,17 +344,21 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
             cluster.alerts, cluster.hosts
         )
 
-        # 3.1c: Suppress noise clusters.
-        # An incident is 'open' (surfaces) if raw_alert_count >= INCIDENT_MIN_ALERTS
-        # OR it contains at least one high or critical alert. Otherwise 'suppressed'.
+        # 4a: Require priority > 0 AND (raw_alert_count >= INCIDENT_MIN_ALERTS or has_high_crit)
+        # to surface as 'open'. Incidents with priority == 0 are suppressed noise.
         has_high_crit = any(
             a.severity in ("high", "critical") for a in cluster.alerts
         )
         status = (
             "open"
-            if (cluster.raw_alert_count >= INCIDENT_MIN_ALERTS or has_high_crit)
+            if (
+                priority_score > 0
+                and (cluster.raw_alert_count >= INCIDENT_MIN_ALERTS or has_high_crit)
+            )
             else "suppressed"
         )
+
+
 
         q_create_inc = text("""
             INSERT INTO incidents (

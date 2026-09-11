@@ -195,14 +195,118 @@ def get_incident(
         for r in session.execute(q_edge, {"id": incident_id})
     ]
 
+    # Narrative sentences (Step 4c & 4d)
+    q_narr = text("""
+        SELECT id, seq, text, evidence_event_ids, technique_id, technique_name,
+               technique_conf, generated_by
+        FROM narrative_sentences
+        WHERE incident_id = :id
+        ORDER BY seq ASC
+    """)
+    narrative = [
+        {
+            "id": r.id,
+            "seq": r.seq,
+            "text": r.text,
+            "evidence_event_ids": r.evidence_event_ids or [],
+            "technique_id": r.technique_id,
+            "technique_name": r.technique_name,
+            "technique_conf": float(r.technique_conf) if r.technique_conf is not None else None,
+            "generated_by": r.generated_by,
+        }
+        for r in session.execute(q_narr, {"id": incident_id})
+    ]
+
     return {
         "incident": incident,
         "timeline": timeline,
-        "narrative": [],
+        "narrative": narrative,
         "verifications": [],
         "techniques": [],
         "entities": entities,
         "edges": edges,
         "recommendations": [],
     }
+
+
+@app.get("/evidence")
+def get_evidence(
+    event_ids: str,
+    incident_id: int | None = None,
+    session: Session = Depends(db.get_session),
+) -> list[dict]:
+    """Fetch raw telemetry events for click-to-evidence (Step 4e).
+
+    Returns raw::text directly without decoding and re-serializing JSON,
+    strictly preserving byte-identity.
+    """
+    if not event_ids:
+        return []
+    try:
+        ids = [int(i.strip()) for i in event_ids.split(",") if i.strip()]
+    except ValueError:
+        raise HTTPException(400, "event_ids must be a comma-separated list of integers")
+
+    if not ids:
+        return []
+
+    q = text("""
+        SELECT id, ts, source, host, event_code, raw::text AS raw_text
+        FROM events
+        WHERE id = ANY(:ids)
+        ORDER BY ts ASC, event_code ASC, id ASC
+    """)
+    rows = session.execute(q, {"ids": ids}).fetchall()
+
+    # Pre-fetch evidence_selection_reason if incident_id is given
+    reason_lookup = {}
+    if incident_id:
+        from curator.pipeline.evidence import fetch_incident_evidence
+        q_alert_ids = text("SELECT event_id FROM alerts WHERE incident_id = :inc_id")
+        a_ids = [r[0] for r in session.execute(q_alert_ids, {"inc_id": incident_id}).fetchall()]
+        ev_items = fetch_incident_evidence(session, a_ids)
+        for e in ev_items:
+            reason_lookup[e["id"]] = e.get("evidence_selection_reason", "context")
+
+    result = []
+    for r in rows:
+        reason = reason_lookup.get(r.id)
+        if not reason:
+            # Check if event triggered an alert directly
+            is_alert = session.execute(
+                text("SELECT EXISTS(SELECT 1 FROM alerts WHERE event_id = :eid)"),
+                {"eid": r.id},
+            ).scalar()
+            reason = "alerting" if is_alert else "context"
+
+        result.append(
+            {
+                "id": r.id,
+                "ts": r.ts.isoformat() if r.ts else None,
+                "source": r.source,
+                "host": r.host,
+                "event_code": r.event_code,
+                "raw": r.raw_text,
+                "evidence_selection_reason": reason,
+            }
+        )
+    return result
+
+
+@app.post("/incidents/{incident_id}/narrative")
+def generate_narrative_endpoint(
+    incident_id: int, session: Session = Depends(db.get_session)
+) -> dict:
+    """Generate evidence-grounded narrative and ATT&CK mappings for an incident (Step 4c & 4d)."""
+    from curator.ai.mapping import map_incident_techniques
+    from curator.ai.narrative import generate_incident_narrative
+
+    narr_result = generate_incident_narrative(incident_id, session)
+    map_result = map_incident_techniques(incident_id, session)
+
+    return {
+        "narrative": narr_result,
+        "attack_mapping": map_result,
+    }
+
 

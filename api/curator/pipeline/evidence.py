@@ -139,6 +139,8 @@ def fetch_incident_evidence(
             for u in users:
                 if remaining_slots <= 0:
                     break
+                # Exclude Windows handle open/close/access churn (4656, 4658, 4663, 4690)
+                # to prevent audit noise from saturating the evidence set (Step 4a / #384).
                 q_user = text("""
                     SELECT id, ts, source, host, user_name, process_name, process_id,
                            parent_process, src_ip, dst_ip, file_path, command_line,
@@ -148,6 +150,7 @@ def fetch_incident_evidence(
                       AND user_name ILIKE :user_pattern
                       AND ts >= :min_ts
                       AND ts <= :max_ts
+                      AND event_code NOT IN ('4656', '4658', '4663', '4690')
                       AND NOT (id = ANY(:already_ids))
                     ORDER BY ts ASC, id ASC
                     LIMIT :limit
@@ -160,7 +163,7 @@ def fetch_incident_evidence(
                         "min_ts": alert_min_ts - timedelta(seconds=30),
                         "max_ts": alert_max_ts + timedelta(seconds=30),
                         "already_ids": list(selected_events_by_id.keys()),
-                        "limit": remaining_slots,
+                        "limit": min(remaining_slots, 60),
                     },
                 )
                 for row in res_b:
