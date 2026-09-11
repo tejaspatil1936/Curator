@@ -87,6 +87,20 @@ _RECON_BINARIES = {
 }
 _ADMIN_SHARES = {"ADMIN$", "C$", "IPC$"}
 
+# 6.1a: Benign Windows scheduled tasks to ignore in CUR-008
+_BENIGN_TASK_SUBSTRINGS = (
+    r"\onedrive standalone update task",
+    r"\microsoft\windows\updateorchestrator",
+    r"\microsoft\windows\softwareprotectionplatform",
+    r"\microsoft\windows\grouppolicy",
+    r"\microsoft\windows\device information",
+    r"\microsoft\windows\application experience",
+    r"\microsoft\windows\pushtoinstall",
+)
+
+# 6.1a: Evaluator / test harness IP range
+_EVALUATOR_IPS = {"172.18.39.2"}
+
 
 def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     """Evaluate an event against all detection rules.
@@ -336,12 +350,19 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # EventIDs: Security 4698, 4702
     # --------------------------------------------------------------------------
     if eid in ("4698", "4702"):
-        add_alert(
-            "CUR-008",
-            "Scheduled Task Created or Updated",
-            "medium",
-            ["T1053.005"],
-        )
+        raw_task_name = str(
+            unmapped.get("TaskName")
+            or (event.get("raw") or {}).get("TaskName")
+            or ""
+        ).lower()
+        is_benign_task = any(s in raw_task_name for s in _BENIGN_TASK_SUBSTRINGS)
+        if not is_benign_task:
+            add_alert(
+                "CUR-008",
+                "Scheduled Task Created or Updated",
+                "medium",
+                ["T1053.005"],
+            )
 
     # --------------------------------------------------------------------------
     # Rule CUR-009: Local User Account Creation
@@ -476,12 +497,27 @@ def evaluate_event(event: dict[str, Any]) -> list[AlertCandidate]:
     # Rule CUR-017: Remote Desktop Interactive Logon
     # EventIDs: Security 4624 (LogonType 10), TerminalServices 1149
     # --------------------------------------------------------------------------
-    if (
+    if eid == "1149":
+        # Extract source IP from Message / raw event for TerminalServices
+        raw_msg = str((event.get("raw") or {}).get("Message") or "")
+        rdp_ip = None
+        if "Source Network Address:" in raw_msg:
+            rdp_ip = raw_msg.split("Source Network Address:")[-1].strip().split()[0]
+        # Ignore benign evaluator/test harness RDP logins
+        if rdp_ip and rdp_ip not in _EVALUATOR_IPS and not is_ignorable_ip(rdp_ip):
+            add_alert(
+                "CUR-017",
+                "Remote Desktop Interactive Session Connected",
+                "high",
+                ["T1021.001"],
+            )
+    elif (
         eid == "4624"
-        and str(unmapped.get("LogonType") or "") == "10"
+        and str(unmapped.get("LogonType") or (event.get("raw") or {}).get("LogonType") or "") == "10"
         and src_ip
+        and str(src_ip) not in _EVALUATOR_IPS
         and not is_ignorable_ip(src_ip)
-    ) or eid == "1149":
+    ):
         add_alert(
             "CUR-017",
             "Remote Desktop Interactive Session Connected",

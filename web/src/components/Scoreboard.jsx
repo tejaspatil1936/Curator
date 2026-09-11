@@ -50,22 +50,25 @@ export default function Scoreboard({ incidentId }) {
   const {
     executed = 0,
     recovered = 0,
-    invented = 0,
+    not_in_evidence = 0,
+    beyond_ground_truth = 0,
     precision = 0,
     recall = 0,
     time_to_narrative_seconds = 88,
     ground_truth_techniques = [],
     recovered_techniques = [],
+    beyond_ground_truth_techniques = [],
   } = data
 
-  const isInventedZero = invented === 0
+  const [expandedTid, setExpandedTid] = useState(null)
+  const isNotInEvidenceZero = not_in_evidence === 0
 
   return (
     <div className="py-6 space-y-10" role="region" aria-label="Accuracy Scoreboard">
-      {/* Three Big Centred Numbers (DESIGN.md §5.7) */}
-      <div className="flex items-center justify-center gap-12 sm:gap-20 pt-4 pb-2 border-b border-rule">
+      {/* Four Big Centred Numbers (DESIGN.md §5.7 & Step 6.1b) */}
+      <div className="flex flex-wrap items-center justify-center gap-10 sm:gap-14 pt-4 pb-4 border-b border-rule">
         {/* Executed */}
-        <div className="text-center min-w-[100px]">
+        <div className="text-center min-w-[90px]">
           <div className="font-sans font-bold text-[48px] leading-tight text-ink tracking-tight">
             {executed}
           </div>
@@ -75,7 +78,7 @@ export default function Scoreboard({ incidentId }) {
         </div>
 
         {/* Recovered */}
-        <div className="text-center min-w-[100px]">
+        <div className="text-center min-w-[90px]">
           <div className="font-sans font-bold text-[48px] leading-tight text-ink tracking-tight">
             {recovered}
           </div>
@@ -84,21 +87,31 @@ export default function Scoreboard({ incidentId }) {
           </div>
         </div>
 
-        {/* Invented - Visual Weight & --verified when zero */}
-        <div className="text-center min-w-[100px]">
+        {/* Not In Evidence - Visual Weight & --verified when zero */}
+        <div className="text-center min-w-[110px]">
           <div
             className={`font-sans font-bold text-[48px] leading-tight tracking-tight ${
-              isInventedZero ? 'text-verified font-extrabold' : 'text-unsupported'
+              isNotInEvidenceZero ? 'text-verified font-extrabold' : 'text-unsupported'
             }`}
           >
-            {invented}
+            {not_in_evidence}
           </div>
           <div
             className={`mt-1 text-small uppercase tracking-wider font-semibold ${
-              isInventedZero ? 'text-verified' : 'text-unsupported'
+              isNotInEvidenceZero ? 'text-verified' : 'text-unsupported'
             }`}
           >
-            invented
+            not in evidence
+          </div>
+        </div>
+
+        {/* Beyond Ground Truth - Neutral visual weight */}
+        <div className="text-center min-w-[130px]">
+          <div className="font-sans font-bold text-[48px] leading-tight text-ink tracking-tight">
+            {beyond_ground_truth}
+          </div>
+          <div className="mt-1 text-small text-ink-muted uppercase tracking-wider font-medium">
+            beyond ground truth
           </div>
         </div>
       </div>
@@ -142,7 +155,11 @@ export default function Scoreboard({ incidentId }) {
               return (
                 <div
                   key={idx}
-                  className="flex items-baseline justify-between p-2 rounded bg-paper hover:bg-paper-sunk border border-rule/60 transition-colors text-small"
+                  className={`flex items-baseline justify-between p-2 rounded border transition-colors text-small ${
+                    isMissed
+                      ? 'bg-paper/40 border-rule/40 text-ink-muted'
+                      : 'bg-paper hover:bg-paper-sunk border-rule/60 text-ink'
+                  }`}
                 >
                   <div className="flex items-baseline gap-2 min-w-0 pr-2">
                     <span
@@ -151,7 +168,7 @@ export default function Scoreboard({ incidentId }) {
                           ? 'text-verified'
                           : isParentChild
                           ? 'text-amber-600'
-                          : 'text-ink-faint'
+                          : 'text-ink-muted'
                       }`}
                     >
                       {isExact && '✓'}
@@ -161,13 +178,18 @@ export default function Scoreboard({ incidentId }) {
                     <span className="font-mono text-primary font-medium text-mono-sm flex-shrink-0">
                       {gt.technique_id}
                     </span>
-                    <span className="truncate text-ink" title={gt.name}>
+                    <span className="truncate" title={gt.name}>
                       {gt.name}
                     </span>
                   </div>
-                  <span className="text-mono-sm font-mono text-ink-muted flex-shrink-0" title={gt.step}>
-                    {gt.step}
-                  </span>
+                  <div className="flex items-center gap-2 flex-shrink-0 text-mono-sm font-mono text-ink-muted">
+                    {gt.shipped_id !== gt.technique_id && (
+                      <span className="text-ink-muted/80 text-[11px]" title={`Shipped as ${gt.shipped_id}`}>
+                        (ex-{gt.shipped_id})
+                      </span>
+                    )}
+                    <span>{gt.step}</span>
+                  </div>
                 </div>
               )
             })}
@@ -187,41 +209,80 @@ export default function Scoreboard({ incidentId }) {
             {recovered_techniques.map((rec, idx) => {
               const isExact = rec.match_type === 'exact'
               const isParentChild = rec.match_type === 'parent_child'
-              const isInvented = rec.match_type === 'invented'
+              const isBeyondGt = rec.match_type === 'beyond_gt'
+              const beyondItem = isBeyondGt
+                ? beyond_ground_truth_techniques.find((b) => b.technique_id === rec.technique_id)
+                : null
+              const isExpanded = expandedTid === rec.technique_id
 
               return (
                 <div
                   key={idx}
-                  className="flex items-baseline justify-between p-2 rounded bg-paper hover:bg-paper-sunk border border-rule/60 transition-colors text-small"
+                  className="rounded bg-paper hover:bg-paper-sunk border border-rule/60 transition-colors text-small overflow-hidden"
                 >
-                  <div className="flex items-baseline gap-2 min-w-0 pr-2">
-                    <span
-                      className={`font-mono text-mono-sm font-semibold flex-shrink-0 ${
-                        isExact
-                          ? 'text-verified'
-                          : isParentChild
-                          ? 'text-amber-600'
-                          : 'text-unsupported'
-                      }`}
-                    >
-                      {isExact && '✓'}
-                      {isParentChild && '⚠'}
-                      {isInvented && '✗'}
-                    </span>
-                    <span className="font-mono text-primary font-medium text-mono-sm flex-shrink-0">
-                      {rec.technique_id}
-                    </span>
-                    <span className="truncate text-ink" title={rec.name}>
-                      {rec.name}
-                    </span>
+                  <div
+                    className={`flex items-baseline justify-between p-2 ${
+                      isBeyondGt ? 'cursor-pointer select-none' : ''
+                    }`}
+                    onClick={() => {
+                      if (isBeyondGt) {
+                        setExpandedTid(isExpanded ? null : rec.technique_id)
+                      }
+                    }}
+                  >
+                    <div className="flex items-baseline gap-2 min-w-0 pr-2">
+                      <span
+                        className={`font-mono text-mono-sm font-semibold flex-shrink-0 ${
+                          isExact
+                            ? 'text-verified'
+                            : isParentChild
+                            ? 'text-amber-600'
+                            : 'text-ink-secondary'
+                        }`}
+                      >
+                        {isExact && '✓'}
+                        {isParentChild && '⚠'}
+                        {isBeyondGt && '+'}
+                      </span>
+                      <span className="font-mono text-primary font-medium text-mono-sm flex-shrink-0">
+                        {rec.technique_id}
+                      </span>
+                      <span className="truncate text-ink" title={rec.name}>
+                        {rec.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-mono-sm font-mono text-ink-muted flex-shrink-0">
+                      {isExact && 'exact'}
+                      {isParentChild && 'parent/child'}
+                      {isBeyondGt && (
+                        <span className="text-ink-secondary font-medium flex items-center gap-1">
+                          beyond GT {isExpanded ? '▲' : '▼'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-mono-sm font-mono text-ink-muted flex-shrink-0">
-                    {isExact && 'exact'}
-                    {isParentChild && 'parent/child'}
-                    {isInvented && (
-                      <span className="text-unsupported font-medium">untracked</span>
-                    )}
-                  </span>
+
+                  {/* Expandable Justification for Beyond Ground Truth */}
+                  {isBeyondGt && isExpanded && beyondItem && (
+                    <div className="px-3 pb-3 pt-1 border-t border-rule/40 bg-paper-sunk/50 text-small space-y-2">
+                      <div className="text-ink-muted text-[11px] uppercase tracking-wider font-semibold">
+                        Justification Telemetry
+                      </div>
+                      {beyondItem.justifications.map((j, jIdx) => (
+                        <div key={jIdx} className="space-y-1 bg-paper p-2 rounded border border-rule/40 text-xs">
+                          <p className="text-ink font-sans text-xs italic">
+                            "{j.text}"
+                          </p>
+                          {j.commands.map((cmd, cIdx) => (
+                            <div key={cIdx} className="font-mono text-[11px] text-ink-secondary break-all bg-paper-sunk px-1.5 py-1 rounded">
+                              <span className="text-ink-muted">{cmd.process_name ? `${cmd.process_name}: ` : ''}</span>
+                              {cmd.command_line}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })}

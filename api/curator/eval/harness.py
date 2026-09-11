@@ -192,12 +192,80 @@ def evaluate_accuracy(session: Session | None = None) -> dict[str, Any]:
                 recovered_all_matched_ids.add(rec_id)
                 gt_matched_ids.add(matched_gt)
 
-        # 5. Invented techniques
-        invented_ids = sorted(set(recovered_dict.keys()) - recovered_all_matched_ids)
-        invented_list = [
-            {"technique_id": tid, "technique_name": recovered_dict[tid]}
-            for tid in invented_ids
+        # 5. Invented techniques -> split into not_in_evidence and beyond_ground_truth (6.1b)
+        # not_in_evidence: techniques whose sentences failed verification or were unsupported and have no supported occurrences
+        # In Curator, we count:
+        # - Any technique claimed in narrative_sentences where verification.supported = false and that technique has NO supported sentences
+        q_unsupported_only = text("""
+            SELECT DISTINCT n.technique_id, n.technique_name
+            FROM narrative_sentences n
+            JOIN verifications v ON v.sentence_id = n.id
+            JOIN incidents i ON i.id = n.incident_id
+            WHERE i.status != 'suppressed'
+              AND v.supported = false
+              AND n.technique_id IS NOT NULL
+              AND n.technique_id NOT IN (
+                  SELECT n2.technique_id
+                  FROM narrative_sentences n2
+                  JOIN verifications v2 ON v2.sentence_id = n2.id
+                  JOIN incidents i2 ON i2.id = n2.incident_id
+                  WHERE i2.status != 'suppressed'
+                    AND v2.supported = true
+                    AND n2.technique_id IS NOT NULL
+              )
+        """)
+        not_in_evidence_rows = session.execute(q_unsupported_only).fetchall()
+        not_in_evidence_list = [
+            {"technique_id": r[0], "technique_name": r[1]}
+            for r in not_in_evidence_rows
         ]
+        not_in_evidence_count = len(not_in_evidence_list)
+
+        # beyond_ground_truth: verified techniques genuinely evidenced that are absent from GT
+        beyond_gt_ids = sorted(set(recovered_dict.keys()) - recovered_all_matched_ids)
+        beyond_gt_list = []
+        for tid in beyond_gt_ids:
+            # Query justifications (sentences and command lines)
+            q_just = text("""
+                SELECT n.id, n.incident_id, n.seq, n.text, n.evidence_event_ids
+                FROM narrative_sentences n
+                JOIN verifications v ON v.sentence_id = n.id
+                JOIN incidents i ON i.id = n.incident_id
+                WHERE i.status != 'suppressed'
+                  AND v.supported = true
+                  AND n.technique_id = :tid
+                ORDER BY n.incident_id, n.seq
+            """)
+            just_rows = session.execute(q_just, {"tid": tid}).fetchall()
+            justifications = []
+            for jr in just_rows:
+                cmd_lines = []
+                if jr.evidence_event_ids:
+                    q_cmds = text("""
+                        SELECT id, process_name, command_line, raw
+                        FROM events
+                        WHERE id = ANY(:eids)
+                    """)
+                    for ev in session.execute(q_cmds, {"eids": jr.evidence_event_ids}).fetchall():
+                        cmd = ev.command_line or (ev.raw or {}).get("CommandLine") or (ev.raw or {}).get("Message") or ""
+                        cmd_lines.append({
+                            "event_id": ev.id,
+                            "process_name": ev.process_name,
+                            "command_line": str(cmd).strip(),
+                        })
+                justifications.append({
+                    "sentence_id": jr.id,
+                    "incident_id": jr.incident_id,
+                    "seq": jr.seq,
+                    "text": jr.text,
+                    "commands": cmd_lines,
+                })
+            beyond_gt_list.append({
+                "technique_id": tid,
+                "technique_name": recovered_dict[tid],
+                "justifications": justifications,
+            })
+        beyond_gt_count = len(beyond_gt_list)
 
         # 6. Missed ground truth techniques
         missed_ids = sorted(set(gt_by_mapped_id.keys()) - gt_matched_ids)
@@ -220,7 +288,7 @@ def evaluate_accuracy(session: Session | None = None) -> dict[str, Any]:
         total_recovered_count = len(exact_matches) + len(parent_child_matches)
         recovered_unique_gt_count = len(gt_matched_ids)
         missed_count = len(missed_list)
-        invented_count = len(invented_list)
+        invented_count = beyond_gt_count + not_in_evidence_count
 
         precision = round(total_recovered_count / len(recovered_dict), 4) if recovered_dict else 0.0
         recall = round(recovered_unique_gt_count / executed_count, 4) if executed_count else 0.0
@@ -258,7 +326,7 @@ def evaluate_accuracy(session: Session | None = None) -> dict[str, Any]:
         recovered_report = []
         for rec_id, rec_name in sorted(recovered_dict.items()):
             in_gt = rec_id in recovered_all_matched_ids
-            m_type = "exact" if any(m["technique_id"] == rec_id for m in exact_matches) else ("parent_child" if in_gt else "invented")
+            m_type = "exact" if any(m["technique_id"] == rec_id for m in exact_matches) else ("parent_child" if in_gt else "beyond_gt")
             recovered_report.append({
                 "technique_id": rec_id,
                 "name": rec_name,
@@ -274,12 +342,15 @@ def evaluate_accuracy(session: Session | None = None) -> dict[str, Any]:
             "parent_child_matches_count": len(parent_child_matches),
             "missed": missed_count,
             "invented": invented_count,
+            "not_in_evidence": not_in_evidence_count,
+            "beyond_ground_truth": beyond_gt_count,
             "precision": precision,
             "recall": recall,
             "time_to_narrative_seconds": time_to_narrative_sec,
             "exact_matches": exact_matches,
             "parent_child_matches": parent_child_matches,
-            "invented_techniques": invented_list,
+            "not_in_evidence_techniques": not_in_evidence_list,
+            "beyond_ground_truth_techniques": beyond_gt_list,
             "missed_techniques": missed_list,
             "ground_truth_techniques": all_gt_report,
             "recovered_techniques": recovered_report,
@@ -299,7 +370,8 @@ def print_cli_report(data: dict[str, Any]) -> None:
     print(f"  - Exact Matches                    : {data['exact_matches_count']}")
     print(f"  - Parent / Child Sub-Technique     : {data['parent_child_matches_count']}")
     print(f"Missed Techniques                    : {data['missed']}")
-    print(f"Invented Techniques                  : {data['invented']}")
+    print(f"Not in Evidence                      : {data['not_in_evidence']}")
+    print(f"Beyond Ground Truth                  : {data['beyond_ground_truth']}")
     print(f"Precision                            : {data['precision'] * 100:.1f}%")
     print(f"Recall                               : {data['recall'] * 100:.1f}%")
     print(f"Time to Narrative (Largest Incident) : {data['time_to_narrative_seconds']}s")
@@ -313,12 +385,24 @@ def print_cli_report(data: dict[str, Any]) -> None:
     for m in data["parent_child_matches"]:
         print(f"  ⚠ {m['technique_id']:<12} {m['technique_name']:<35} (matches GT: {m['gt_id']})")
 
-    print(f"\n--- INVENTED TECHNIQUES ({data['invented']}) ---")
-    if data["invented"] == 0:
-        print("  None. (0 invented)")
+    print(f"\n--- NOT IN EVIDENCE ({data['not_in_evidence']}) ---")
+    if data["not_in_evidence"] == 0:
+        print("  None. (0 not in evidence)")
     else:
-        for inv in data["invented_techniques"]:
-            print(f"  ✗ {inv['technique_id']:<12} {inv['technique_name']}")
+        for nie in data["not_in_evidence_techniques"]:
+            print(f"  ✗ {nie['technique_id']:<12} {nie['technique_name']}")
+
+    print(f"\n--- BEYOND GROUND TRUTH ({data['beyond_ground_truth']}) ---")
+    if data["beyond_ground_truth"] == 0:
+        print("  None.")
+    else:
+        for bgt in data["beyond_ground_truth_techniques"]:
+            print(f"  + {bgt['technique_id']:<12} {bgt['technique_name']}")
+            for just in bgt.get("justifications", []):
+                print(f"      Sentence [Inc #{just['incident_id']} Seq {just['seq']}]: {just['text']}")
+                for cmd in just.get("commands", []):
+                    if cmd.get("command_line"):
+                        print(f"        Cmd: {cmd['command_line'][:100]}")
 
     print(f"\n--- FULL MISSED LIST ({data['missed']}) ---")
     for idx, miss in enumerate(data["missed_techniques"], start=1):

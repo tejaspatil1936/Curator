@@ -96,7 +96,7 @@ def _execute_pipeline(session: Session) -> dict[str, Any]:
     q_events = text("""
         SELECT id, ts, source, host, user_name, process_name, process_id,
                parent_process, src_ip, dst_ip, file_path, command_line,
-               event_code, ocsf, is_planted
+               event_code, ocsf, is_planted, raw
         FROM events
         WHERE event_code = ANY(:codes)
         ORDER BY ts ASC, id ASC
