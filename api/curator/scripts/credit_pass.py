@@ -196,6 +196,17 @@ def main() -> None:
             if n_sent == 0:
                 print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: SKIP (no sentences)")
                 continue
+            n_unverified = session.execute(text(
+                """
+                SELECT COUNT(*)
+                FROM narrative_sentences s
+                LEFT JOIN verifications v ON v.sentence_id = s.id
+                WHERE s.incident_id = :id AND v.id IS NULL
+                """
+            ), {"id": iid}).scalar() or 0
+            if n_unverified == 0:
+                print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: SKIP (already verified)")
+                continue
             t0 = time.time()
             try:
                 result = verify_incident(iid, session=session)

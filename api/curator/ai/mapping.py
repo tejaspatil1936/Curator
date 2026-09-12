@@ -274,7 +274,7 @@ def map_incident_techniques(
         model=MODEL_SONNET,
         system_blocks=system_blocks,
         user_blocks=user_blocks,
-        max_tokens=1024,
+        max_tokens=4096,
         session=session,
         incident_id=incident_id,
         task_name="mapping",

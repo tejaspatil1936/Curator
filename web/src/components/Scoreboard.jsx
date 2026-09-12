@@ -5,6 +5,7 @@ export default function Scoreboard({ incidentId }) {
   const [data, setData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [expandedTid, setExpandedTid] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +61,6 @@ export default function Scoreboard({ incidentId }) {
     beyond_ground_truth_techniques = [],
   } = data
 
-  const [expandedTid, setExpandedTid] = useState(null)
   const isNotInEvidenceZero = not_in_evidence === 0
 
   return (
