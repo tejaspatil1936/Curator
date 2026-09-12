@@ -161,7 +161,7 @@ export default function Scoreboard({ incidentId }) {
                       : 'bg-paper hover:bg-paper-sunk border-rule/60 text-ink'
                   }`}
                 >
-                  <div className="flex items-baseline gap-2 min-w-0 pr-2">
+                  <div className="flex items-baseline gap-2 min-w-0 flex-1 pr-2">
                     <span
                       className={`font-mono text-mono-sm font-semibold flex-shrink-0 ${
                         isExact
@@ -182,13 +182,13 @@ export default function Scoreboard({ incidentId }) {
                       {gt.name}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 text-mono-sm font-mono text-ink-muted">
+                  <div className="flex items-center gap-1.5 flex-shrink-0 max-w-[45%] text-mono-sm font-mono text-ink-muted">
                     {gt.shipped_id !== gt.technique_id && (
-                      <span className="text-ink-muted/80 text-[11px]" title={`Shipped as ${gt.shipped_id}`}>
+                      <span className="text-ink-muted/80 text-[11px] flex-shrink-0" title={`Shipped as ${gt.shipped_id}`}>
                         (ex-{gt.shipped_id})
                       </span>
                     )}
-                    <span>{gt.step}</span>
+                    <span className="truncate" title={gt.step}>{gt.step}</span>
                   </div>
                 </div>
               )
