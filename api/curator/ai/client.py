@@ -85,7 +85,12 @@ def call_claude(
 
     # Real Anthropic API execution with exponential backoff & jitter
     import anthropic
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
+    client_kwargs: dict[str, Any] = {
+        "api_key": settings.anthropic_api_key.get_secret_value(),
+    }
+    if settings.anthropic_base_url:
+        client_kwargs["base_url"] = settings.anthropic_base_url
+    client = anthropic.Anthropic(**client_kwargs)
 
     max_retries = 5
     base_delay = 1.0

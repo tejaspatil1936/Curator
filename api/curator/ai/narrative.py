@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from sqlalchemy import text
@@ -35,6 +36,7 @@ STRICT FORENSIC GROUNDING & CITATION RULES:
 6. FACTUAL GROUNDING: Describe ONLY actions and facts directly demonstrated by the provided telemetry events. NEVER speculate or extrapolate unobserved steps.
 7. CITATION BOUNDARY: Every ID in `evidence_event_ids` MUST be an exact Event ID from the provided Incident Telemetry Corpus. Never invent or synthesize event IDs.
 8. TARGET LENGTH GUIDANCE: Produce 12–25 sentences for a large incident (many alerts/hosts), and 2–5 sentences for a small incident.
+9. QUOTING COMMAND LINES AND FILE PATHS: When including a command line, file path, or executable argument inside sentence text, do NOT wrap it in double-quote characters. State it bare (e.g. C:\ProgramData\victim\cod.3aka3.scr /S) or use single quotes (e.g. 'cmd /c whoami'). Double quotes inside a JSON string value break the JSON envelope and MUST be avoided.
 
 EXPLICIT PROHIBITIONS (MANDATORY):
 - NO NEGATIVE CORPUS CLAIMS: NEVER state negative claims about the broader corpus (e.g. NEVER write "No further corroborating events are present in the corpus", "No additional telemetry was observed"). Describe ONLY the positive activity actually captured in the events.
@@ -54,6 +56,101 @@ Output format MUST be pure JSON conforming to:
 }
 """
 
+
+# ---------------------------------------------------------------------------
+# Tolerant JSON repair — sentence-by-sentence scanner
+# ---------------------------------------------------------------------------
+
+def _repair_narrative_json(raw: str, incident_id: int) -> dict | None:
+    """Two-pass repair for malformed narrative JSON.
+
+    Pass 1: strip the outermost envelope and close the array, then re-parse.
+    Pass 2: if pass 1 also fails, scan for individual sentence objects with a
+            regex and decode each independently — one bad sentence loses only
+            itself, not the whole narrative.
+
+    Returns a dict with 'title' and 'sentences' on success, None on total failure.
+    """
+    # Extract title from preamble (very likely well-formed)
+    title: str = f"Incident #{incident_id}"
+    title_match = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+    if title_match:
+        try:
+            # Re-parse the captured group as a JSON string literal to handle escapes
+            title = json.loads('"' + title_match.group(1) + '"')
+        except Exception:
+            title = title_match.group(1)
+
+    # ------------------------------------------------------------------
+    # Pass 1: close the JSON array if it's just truncated / trailing-comma
+    # ------------------------------------------------------------------
+    last_brace = raw.rfind("}")
+    if last_brace != -1:
+        candidate = raw[: last_brace + 1].strip()
+        if not candidate.endswith("]}"):
+            candidate = candidate.rstrip(" ,\n") + "\n]}"
+        try:
+            data = json.loads(candidate)
+            n = len(data.get("sentences", []))
+            logger.info(
+                "Incident #%d JSON pass-1 repair recovered %d sentences.", incident_id, n
+            )
+            return data
+        except Exception:
+            pass  # fall through to pass 2
+
+    # ------------------------------------------------------------------
+    # Pass 2: sentence-by-sentence tolerant scan
+    # Each sentence object must have "seq", "text", and "evidence_event_ids".
+    # We find every {...} blob that contains all three keys and try to parse
+    # it individually.  Objects that fail are logged and skipped.
+    # ------------------------------------------------------------------
+    # Grab everything from the opening '[' of the sentences array onward
+    array_start = raw.find('"sentences"')
+    search_region = raw[array_start:] if array_start != -1 else raw
+
+    sentences: list[dict] = []
+    skipped = 0
+
+    # Find candidate JSON objects: greedily match from '{' to a balanced '}'
+    depth = 0
+    obj_start: int | None = None
+    for i, ch in enumerate(search_region):
+        if ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start is not None:
+                blob = search_region[obj_start: i + 1]
+                # Only attempt sentence objects (must have all three fields)
+                if '"seq"' in blob and '"text"' in blob and '"evidence_event_ids"' in blob:
+                    try:
+                        obj = json.loads(blob)
+                        if isinstance(obj.get("seq"), int) and isinstance(obj.get("text"), str):
+                            sentences.append(obj)
+                    except Exception as e:
+                        skipped += 1
+                        logger.warning(
+                            "Incident #%d pass-2 scanner: skipped malformed sentence object "
+                            "(blob length %d): %s",
+                            incident_id, len(blob), e,
+                        )
+                obj_start = None
+
+    if sentences:
+        logger.info(
+            "Incident #%d JSON pass-2 scanner recovered %d sentences, skipped %d malformed.",
+            incident_id, len(sentences), skipped,
+        )
+        return {"title": title, "sentences": sentences}
+
+    logger.error(
+        "Incident #%d JSON pass-2 scanner found 0 valid sentences (skipped %d).",
+        incident_id, skipped,
+    )
+    return None
 
 
 def generate_incident_narrative(
@@ -148,26 +245,20 @@ def generate_incident_narrative(
     try:
         parsed_data = json.loads(raw_content)
     except json.JSONDecodeError as err:
-        logger.warning("Direct JSON decode failed: %s. Attempting graceful repair.", err)
-        # Find the last complete sentence object
-        last_brace = raw_content.rfind("}")
-        if last_brace != -1:
-            candidate = raw_content[:last_brace + 1].strip()
-            if not candidate.endswith("]}"):
-                candidate = candidate.rstrip(" ,") + "\n]}"
-            try:
-                parsed_data = json.loads(candidate)
-                logger.info("Successfully recovered truncated JSON with %d sentences", len(parsed_data.get("sentences", [])))
-            except Exception as repair_err:
-                logger.error("JSON repair also failed: %s", repair_err)
+        logger.warning(
+            "Incident #%d direct JSON decode failed: %s. Attempting structured repair.",
+            incident_id, err,
+        )
+        parsed_data = _repair_narrative_json(raw_content, incident_id)
 
     if not parsed_data:
-        logger.error("Failed to parse JSON narrative response:\nContent: %s", raw_content[:500])
+        logger.error(
+            "Incident #%d all JSON recovery paths failed. Using empty sentinel.",
+            incident_id,
+        )
         parsed_data = {
             "title": f"Incident #{incident_id}",
-            "sentences": [
-                {"seq": 1, "text": "Telemetry analysis detected anomalous activity.", "evidence_event_ids": []}
-            ],
+            "sentences": [],
         }
 
     title = parsed_data.get("title") or f"Incident #{incident_id}"

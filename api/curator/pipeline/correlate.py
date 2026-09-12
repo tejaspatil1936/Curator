@@ -23,6 +23,7 @@ from curator.config import (
     CORRELATE_IP_WINDOW_SECONDS,
     CORRELATE_PROCESS_WINDOW_SECONDS,
     CORRELATE_USER_WINDOW_SECONDS,
+    MACHINE_ACCOUNT_JOIN_SECONDS,
 )
 from curator.ingest.normalize import (
     is_correlating_user,
@@ -98,6 +99,7 @@ def correlate_alerts(
     process_window_s: int = CORRELATE_PROCESS_WINDOW_SECONDS,
     ip_window_s: int = CORRELATE_IP_WINDOW_SECONDS,
     file_window_s: int = CORRELATE_FILE_WINDOW_SECONDS,
+    machine_account_window_s: int = MACHINE_ACCOUNT_JOIN_SECONDS,
 ) -> list[IncidentCluster]:
     """Correlate alerts into incident clusters using Union-Find.
 
@@ -124,6 +126,7 @@ def correlate_alerts(
         process_window_s,
         ip_window_s,
         file_window_s,
+        machine_account_window_s,
     )
 
     for i in range(n):
@@ -155,6 +158,19 @@ def correlate_alerts(
                 and a.user_norm == b.user_norm
                 and is_correlating_user(a.user_norm)
                 and dt <= user_window_s
+            ):
+                matched = True
+
+            # 2b. Machine account matching own host (§9a: WinRM wsmprovhost under newyork$ on NEWYORK)
+            elif (
+                dt <= machine_account_window_s
+                and a.host
+                and b.host
+                and a.host.split(".")[0].lower() == b.host.split(".")[0].lower()
+                and (
+                    (is_machine_account(a.user_norm) and (a.user_norm or "").rstrip("$").lower() == a.host.split(".")[0].lower() and a.rule_id == "CUR-021")
+                    or (is_machine_account(b.user_norm) and (b.user_norm or "").rstrip("$").lower() == b.host.split(".")[0].lower() and b.rule_id == "CUR-021")
+                )
             ):
                 matched = True
 

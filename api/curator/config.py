@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     # Browser origins allowed to call the API. JSON list when set via env.
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    # Anthropic. Unused until Step 4.
+    # Anthropic / inference provider settings
     anthropic_api_key: SecretStr | None = None
+    anthropic_base_url: str | None = None
     # true: every LLM call returns canned fixtures instead of hitting the API (§7.4).
     dry_run: bool = True
     # true: narrative + challenge run on Opus, as a one-off diagnostic (§10.2).
@@ -61,7 +62,7 @@ def configure_logging() -> None:
 
 # --- Model IDs (§7.1) --------------------------------------------------------
 
-MODEL_HAIKU = "claude-haiku-4-5-20251001"
+MODEL_HAIKU = "claude-haiku-4.5"
 MODEL_SONNET = "claude-sonnet-5"
 MODEL_OPUS = "claude-opus-5"  # diagnostic only, never a dependency
 
@@ -91,6 +92,7 @@ CORRELATE_USER_WINDOW_SECONDS = 1800     # 30 min on same user
 CORRELATE_PROCESS_WINDOW_SECONDS = 900   # 15 min on process lineage
 CORRELATE_IP_WINDOW_SECONDS = 1800       # 30 min on shared IP
 CORRELATE_FILE_WINDOW_SECONDS = 3600     # 60 min on shared file path/hash
+MACHINE_ACCOUNT_JOIN_SECONDS = 120       # 2 min on host-matching machine accounts (§9a)
 
 # Bounded evidence context per incident
 EVIDENCE_SURROUNDING_SECONDS = 60        # ±60s surrounding alerting processes

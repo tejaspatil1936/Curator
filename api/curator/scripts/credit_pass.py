@@ -65,14 +65,18 @@ def _cost_from_audit(session) -> dict:
     """Read token counts and USD from audit_chain since pass started."""
     rows = session.execute(text("""
         SELECT
-            coalesce(sum((detail->>'prompt_tokens')::int), 0)      AS in_toks,
-            coalesce(sum((detail->>'completion_tokens')::int), 0)  AS out_toks,
-            coalesce(sum((detail->>'cost_usd')::float), 0.0)       AS usd
+            coalesce(sum((detail->>'input_tokens')::int), 0)           AS in_toks,
+            coalesce(sum((detail->>'output_tokens')::int), 0)          AS out_toks,
+            coalesce(sum((detail->>'cache_creation_tokens')::int), 0)  AS cache_write_toks,
+            coalesce(sum((detail->>'cache_read_tokens')::int), 0)      AS cache_read_toks,
+            coalesce(sum((detail->>'cost_micro_usd')::bigint), 0)      AS cost_micro_usd
         FROM audit_chain
         WHERE action = 'anthropic_api_call'
-          AND created_at >= :since
+          AND ts >= :since
     """), {"since": _PASS_START}).fetchone()
-    return {"in_toks": rows[0], "out_toks": rows[1], "usd": round(rows[2], 4)}
+    usd = round((rows[4] or 0) / 1_000_000, 4)
+    return {"in_toks": rows[0], "out_toks": rows[1], "cache_write_toks": rows[2], "cache_read_toks": rows[3], "usd": usd}
+
 
 
 # ---------------------------------------------------------------------------
@@ -91,11 +95,18 @@ def main() -> None:
         default=None,
         help="Limit execution to top N open incidents ordered by priority",
     )
+    parser.add_argument(
+        "--max-cost",
+        type=float,
+        default=6.0,
+        help="Abort if cumulative estimated cost exceeds this many USD (default: 6.0)",
+    )
     args = parser.parse_args()
 
     print(f"Credit pass started at {_PASS_START.isoformat()}")
     if args.limit:
         print(f"Processing top {args.limit} incident(s) by priority")
+    print(f"Max-cost guard: ${args.max_cost:.2f}")
     print("=" * 70)
 
     with SessionLocal() as session:
@@ -129,6 +140,15 @@ def main() -> None:
                 print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
                 print("  Continuing with next incident (this one will be skipped in mapping).",
                       file=sys.stderr)
+            # --- cumulative cost guard ---
+            spend = _cost_from_audit(session)
+            if spend["usd"] > args.max_cost:
+                print(
+                    f"\n  COST GUARD TRIGGERED after #{iid}: ${spend['usd']:.4f} exceeds "
+                    f"--max-cost ${args.max_cost:.2f}. Aborting.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
 
         # ------------------------------------------------------------------
         # Step 2: ATT&CK mapping
@@ -154,6 +174,15 @@ def main() -> None:
                 print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: {n_mapped} mapped in {elapsed}s")
             except Exception as exc:
                 print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
+            # --- cumulative cost guard ---
+            spend = _cost_from_audit(session)
+            if spend["usd"] > args.max_cost:
+                print(
+                    f"\n  COST GUARD TRIGGERED after #{iid}: ${spend['usd']:.4f} exceeds "
+                    f"--max-cost ${args.max_cost:.2f}. Aborting.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
 
         # ------------------------------------------------------------------
         # Step 3: Sentence verification
@@ -178,6 +207,15 @@ def main() -> None:
                 verify_results[iid] = result
             except Exception as exc:
                 print(f"  [{i:02d}/{len(incident_ids)}] #{iid}: ERROR — {exc}", file=sys.stderr)
+            # --- cumulative cost guard ---
+            spend = _cost_from_audit(session)
+            if spend["usd"] > args.max_cost:
+                print(
+                    f"\n  COST GUARD TRIGGERED after #{iid}: ${spend['usd']:.4f} exceeds "
+                    f"--max-cost ${args.max_cost:.2f}. Aborting.",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
 
         # ------------------------------------------------------------------
         # Step 4: Accuracy harness
@@ -203,9 +241,11 @@ def main() -> None:
         print("\n" + "=" * 70)
         print("COST SUMMARY (this pass only)")
         print("=" * 70)
-        print(f"  Input tokens   : {cost['in_toks']:,}")
-        print(f"  Output tokens  : {cost['out_toks']:,}")
-        print(f"  Total USD      : ${cost['usd']:.4f}")
+        print(f"  Input tokens         : {cost['in_toks']:,}")
+        print(f"  Output tokens        : {cost['out_toks']:,}")
+        print(f"  Cache write tokens   : {cost['cache_write_toks']:,}")
+        print(f"  Cache read tokens    : {cost['cache_read_toks']:,}")
+        print(f"  Total USD            : ${cost['usd']:.4f}")
 
         elapsed_total = round((datetime.now(UTC) - _PASS_START).total_seconds(), 1)
         print(f"\nPass completed in {elapsed_total}s")

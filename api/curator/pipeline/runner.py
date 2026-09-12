@@ -34,6 +34,7 @@ from curator.config import (
     CORRELATE_PROCESS_WINDOW_SECONDS,
     CORRELATE_USER_WINDOW_SECONDS,
     INCIDENT_MIN_ALERTS,
+    MACHINE_ACCOUNT_JOIN_SECONDS,
     settings,
 )
 from curator.db import SessionLocal
@@ -423,12 +424,25 @@ def _execute_pipeline(
         process_window_s=CORRELATE_PROCESS_WINDOW_SECONDS,
         ip_window_s=CORRELATE_IP_WINDOW_SECONDS,
         file_window_s=CORRELATE_FILE_WINDOW_SECONDS,
+        machine_account_window_s=MACHINE_ACCOUNT_JOIN_SECONDS,
     )
     logger.info("Correlation complete: %d incident clusters formed", len(clusters))
 
     # --------------------------------------------------------------------------
     # Stages 5, 6, 7: Incidents, Priority, Evidence, Entities
     # --------------------------------------------------------------------------
+    # In safe mode (rebuild=False), map existing incidents by (first_seen, sorted hosts)
+    # so matching incidents update in-place without altering their stable IDs.
+    existing_inc_lookup: dict[tuple[datetime, tuple[str, ...]], int] = {}
+    matched_existing_ids: set[int] = set()
+    if not rebuild:
+        db_existing = session.execute(
+            text("SELECT id, first_seen, hosts FROM incidents")
+        ).fetchall()
+        for er in db_existing:
+            h_key = tuple(sorted(er.hosts or []))
+            existing_inc_lookup[(er.first_seen, h_key)] = er.id
+
     incidents_output: list[dict[str, Any]] = []
 
     for cluster in clusters:
@@ -450,32 +464,63 @@ def _execute_pipeline(
             else "suppressed"
         )
 
+        cluster_host_key = tuple(sorted(cluster.hosts or []))
+        inc_id = existing_inc_lookup.get((cluster.first_seen, cluster_host_key))
 
+        if inc_id is not None:
+            matched_existing_ids.add(inc_id)
+            q_update_inc = text("""
+                UPDATE incidents
+                SET last_seen = :last_seen,
+                    event_count = :event_count,
+                    raw_alert_count = :raw_alert_count,
+                    hosts = :hosts,
+                    users = :users,
+                    priority = :priority,
+                    priority_reason = :priority_reason,
+                    status = :status
+                WHERE id = :id
+            """)
+            session.execute(
+                q_update_inc,
+                {
+                    "id": inc_id,
+                    "last_seen": cluster.last_seen,
+                    "event_count": cluster.raw_alert_count,
+                    "raw_alert_count": cluster.raw_alert_count,
+                    "hosts": cluster.hosts,
+                    "users": cluster.users,
+                    "priority": priority_score,
+                    "priority_reason": json.dumps(priority_reason),
+                    "status": status,
+                },
+            )
+        else:
+            q_create_inc = text("""
+                INSERT INTO incidents (
+                    first_seen, last_seen, event_count, raw_alert_count,
+                    hosts, users, priority, priority_reason, status
+                ) VALUES (
+                    :first_seen, :last_seen, :event_count, :raw_alert_count,
+                    :hosts, :users, :priority, :priority_reason, :status
+                ) RETURNING id
+            """)
+            inc_res = session.execute(
+                q_create_inc,
+                {
+                    "first_seen": cluster.first_seen,
+                    "last_seen": cluster.last_seen,
+                    "event_count": cluster.raw_alert_count,
+                    "raw_alert_count": cluster.raw_alert_count,
+                    "hosts": cluster.hosts,
+                    "users": cluster.users,
+                    "priority": priority_score,
+                    "priority_reason": json.dumps(priority_reason),
+                    "status": status,
+                },
+            )
+            inc_id = inc_res.scalar_one()
 
-        q_create_inc = text("""
-            INSERT INTO incidents (
-                first_seen, last_seen, event_count, raw_alert_count,
-                hosts, users, priority, priority_reason, status
-            ) VALUES (
-                :first_seen, :last_seen, :event_count, :raw_alert_count,
-                :hosts, :users, :priority, :priority_reason, :status
-            ) RETURNING id
-        """)
-        inc_res = session.execute(
-            q_create_inc,
-            {
-                "first_seen": cluster.first_seen,
-                "last_seen": cluster.last_seen,
-                "event_count": cluster.raw_alert_count,
-                "raw_alert_count": cluster.raw_alert_count,
-                "hosts": cluster.hosts,
-                "users": cluster.users,
-                "priority": priority_score,
-                "priority_reason": json.dumps(priority_reason),
-                "status": status,
-            },
-        )
-        inc_id = inc_res.scalar_one()
         cluster.incident_id = inc_id
 
         # Link alerts
@@ -573,6 +618,19 @@ def _execute_pipeline(
                 "first_seen": cluster.first_seen.isoformat(),
                 "last_seen": cluster.last_seen.isoformat(),
             }
+        )
+
+    # In safe mode, clean up obsolete unreferenced incidents that were merged into other clusters
+    # (only if they have zero narrative sentences).
+    if not rebuild:
+        all_active_inc_ids = list({c.incident_id for c in clusters if c.incident_id})
+        session.execute(
+            text("""
+                DELETE FROM incidents
+                WHERE NOT (id = ANY(:active_ids))
+                  AND id NOT IN (SELECT DISTINCT incident_id FROM narrative_sentences)
+            """),
+            {"active_ids": all_active_inc_ids if all_active_inc_ids else [-1]},
         )
 
     # Log to audit chain
