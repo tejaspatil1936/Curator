@@ -155,15 +155,15 @@ export default function Scoreboard({ incidentId }) {
               return (
                 <div
                   key={idx}
-                  className={`flex items-baseline justify-between p-2 rounded border transition-colors text-small ${
+                  className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 p-2 rounded border transition-colors text-small overflow-hidden ${
                     isMissed
                       ? 'bg-paper/40 border-rule/40 text-ink-muted'
                       : 'bg-paper hover:bg-paper-sunk border-rule/60 text-ink'
                   }`}
                 >
-                  <div className="flex items-baseline gap-2 min-w-0 flex-1 pr-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <span
-                      className={`font-mono text-mono-sm font-semibold flex-shrink-0 ${
+                      className={`font-mono text-mono-sm font-semibold w-4 text-center ${
                         isExact
                           ? 'text-verified'
                           : isParentChild
@@ -175,14 +175,14 @@ export default function Scoreboard({ incidentId }) {
                       {isParentChild && '⚠'}
                       {isMissed && '✗'}
                     </span>
-                    <span className="font-mono text-primary font-medium text-mono-sm flex-shrink-0">
+                    <span className="font-mono text-primary font-medium text-mono-sm">
                       {gt.technique_id}
                     </span>
-                    <span className="truncate" title={gt.name}>
-                      {gt.name}
-                    </span>
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0 max-w-[45%] text-mono-sm font-mono text-ink-muted">
+                  <span className="truncate min-w-0" title={gt.name}>
+                    {gt.name}
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 justify-end text-mono-sm font-mono text-ink-muted max-w-[210px]">
                     {gt.shipped_id !== gt.technique_id && (
                       <span className="text-ink-muted/80 text-[11px] flex-shrink-0" title={`Shipped as ${gt.shipped_id}`}>
                         (ex-{gt.shipped_id})
@@ -221,7 +221,7 @@ export default function Scoreboard({ incidentId }) {
                   className="rounded bg-paper hover:bg-paper-sunk border border-rule/60 transition-colors text-small overflow-hidden"
                 >
                   <div
-                    className={`flex items-baseline justify-between p-2 ${
+                    className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 p-2 ${
                       isBeyondGt ? 'cursor-pointer select-none' : ''
                     }`}
                     onClick={() => {
@@ -230,9 +230,9 @@ export default function Scoreboard({ incidentId }) {
                       }
                     }}
                   >
-                    <div className="flex items-baseline gap-2 min-w-0 pr-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <span
-                        className={`font-mono text-mono-sm font-semibold flex-shrink-0 ${
+                        className={`font-mono text-mono-sm font-semibold w-4 text-center ${
                           isExact
                             ? 'text-verified'
                             : isParentChild
@@ -244,14 +244,14 @@ export default function Scoreboard({ incidentId }) {
                         {isParentChild && '⚠'}
                         {isBeyondGt && '+'}
                       </span>
-                      <span className="font-mono text-primary font-medium text-mono-sm flex-shrink-0">
+                      <span className="font-mono text-primary font-medium text-mono-sm">
                         {rec.technique_id}
                       </span>
-                      <span className="truncate text-ink" title={rec.name}>
-                        {rec.name}
-                      </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-mono-sm font-mono text-ink-muted flex-shrink-0">
+                    <span className="truncate text-ink min-w-0" title={rec.name}>
+                      {rec.name}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-mono-sm font-mono text-ink-muted flex-shrink-0 justify-end">
                       {isExact && 'exact'}
                       {isParentChild && 'parent/child'}
                       {isBeyondGt && (
